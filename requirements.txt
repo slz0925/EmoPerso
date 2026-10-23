@@ -1,0 +1,8 @@
+numpy==2.2.4
+torch==2.6.0
+transformers==4.51.3
+accelerate==1.5.2
+tokenizers==0.21.1
+safetensors==0.5.3
+huggingface-hub==0.30.0
+packaging==24.2

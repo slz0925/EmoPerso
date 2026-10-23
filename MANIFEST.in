@@ -1,0 +1,16 @@
+include README.md LICENSE CODE_PROVENANCE.md pyproject.toml MANIFEST.in requirements.txt
+include CITATION.cff .gitignore examples/README.md
+include docs/*.md configs/*.toml
+include docs/images/emoperso_architecture.png
+recursive-include emoperso *.py
+include examples/*.py
+prune tests
+prune archive
+global-exclude *.pyc *.pyo __pycache__
+prune data_artifacts
+prune research_docs
+prune kaggle
+prune pandora
+prune kaggle_csv_data
+prune pandora_csv_data
+prune save
