@@ -40,7 +40,7 @@ Shared width must be at least 2 and divisible by num_heads (default 4). Attentio
 
 ## Text augmentation
 
-`HFCausalLMGenerator` is a separate frozen CausalLM with its own tokenizer. Generation runs outside the differentiable model. Resource loading failures raise `GenerationLoadError`; over-budget prompts and failed or unfinished responses produce no accepted view. See [training configuration](training.md#views-and-preparation) for resource and caching settings, and [custom generation](python_api.md#custom-generation) for the backend interface.
+`HFCausalLMGenerator` is a separate frozen CausalLM with its own tokenizer. Generation runs outside the differentiable model. Resource loading failures raise `GenerationLoadError`, and execution failures raise `GenerationExecutionError`. Over-budget prompts and content-rejected or unfinished responses produce no accepted view. See [training configuration](training.md#views-and-preparation) for resource and caching settings, and [custom generation](python_api.md#custom-generation) for the backend interface.
 
 `TextAugmenter` edits certified visible whole-word segments while retaining real source boundaries. Defaults request formal, expressive and concise styles plus one contextual completion. Completion masks a short contiguous phrase within a segment, then inserts only the returned phrase at its original location. `AugmentationConfig` controls segment sizes, mask lengths and output budgets.
 

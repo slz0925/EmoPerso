@@ -143,6 +143,8 @@ class Trainer:
         batches=iter_batches(dataset,tokenizer=self.tokenizer,batch_size=self.config.batch_size,
             shuffle=True,seed=(self.config.seed+epoch)%2**63,temp_dir=self.temp_dir)
         active=pending=seen=skipped=steps=overflows=0;totals={};candidate_count=views=0
+        contrastive_active=contrastive_eligible=contrastive_users=0
+        contrastive_pending=contrastive_optimized=0;contrastive_sum=0.
         start=time.monotonic()
         try:
             for batch in batches:
@@ -160,6 +162,13 @@ class Trainer:
                     'augmentation_KL':losses.augmentation_loss.consistency_loss,
                     'reasoning_entropy':losses.reasoning_entropy,'contrastive':losses.contrastive_loss}
                 candidate_count+=len(output.candidate_ids);views+=losses.augmentation_loss.valid_consistency_views
+                eligible=losses.contrastive_users>=2
+                enabled=eligible and self.criterion.contrastive_weight>0
+                contrastive_eligible+=int(eligible)
+                if enabled:
+                    contrastive_active+=1;contrastive_pending+=1
+                    contrastive_users+=losses.contrastive_users
+                    contrastive_sum+=float(losses.contrastive_loss.detach())
                 if not losses.has_active_supervision:skipped+=1;continue
                 active+=1;pending+=1
                 for k,v in values.items():totals[k]=totals.get(k,0.)+float(v.detach())
@@ -167,14 +176,21 @@ class Trainer:
                 else:loss.backward()
                 if pending==self.config.gradient_accumulation_steps:
                     ok=self._step(pending);steps+=int(ok);overflows+=int(not ok);pending=0
+                    if ok:contrastive_optimized+=contrastive_pending
+                    contrastive_pending=0
             if pending:
                 ok=self._step(pending);steps+=int(ok);overflows+=int(not ok)
+                if ok:contrastive_optimized+=contrastive_pending
         except BaseException:
             self.optimizer.zero_grad(set_to_none=True);raise
         finally:batches.close()
         if seen!=len(dataset):raise DataContractError('Training did not cover all users')
         return {'users':seen,'active_microbatches':active,'inactive_microbatches':skipped,'optimizer_steps':steps,
             'AMP_overflow_windows':overflows,'loss_mean_over_active_microbatches':{k:v/active for k,v in totals.items()},
+            'InfoNCE':{'eligible_microbatches':contrastive_eligible,'active_microbatches':contrastive_active,
+                'optimized_microbatches':contrastive_optimized,'inactive_microbatches':active+skipped-contrastive_active,
+                'eligible_user_occurrences_in_active_microbatches':contrastive_users,
+                'mean_loss_over_active_microbatches':contrastive_sum/contrastive_active if contrastive_active else None},
             'candidates':candidate_count,'augmentation_views':views,'seconds':time.monotonic()-start}
 
     def fit(self,train,validation,*,output_dir,checkpoint_dir=None,resume=None,until_epoch=None):

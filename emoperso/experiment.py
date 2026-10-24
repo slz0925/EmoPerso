@@ -3,7 +3,7 @@ import argparse
 from contextlib import ExitStack
 from dataclasses import asdict,dataclass,field,replace
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import tomllib
 
 import numpy as np
@@ -48,7 +48,11 @@ class ExperimentConfig:
 
 
 def read_config(path):
-    """JSON/TOML. Resource paths resolve relative to the config, not the cwd."""
+    """Read JSON/TOML; explicit local paths are relative to the configuration.
+
+    Unprefixed model names and namespace/name pairs are Hub IDs. Use ./ or ../
+    for local relative directories. local_files_only controls network access.
+    """
     path=Path(path).resolve()
     with path.open('rb') as stream:
         raw=tomllib.load(stream) if path.suffix=='.toml' else json.load(stream)
@@ -56,26 +60,34 @@ def read_config(path):
     config=ExperimentConfig(**raw)
     def resource(value):
         if isinstance(value,list):return [resource(x) for x in value]
-        return str((path.parent/Path(value)).resolve())
+        return str((path.parent/Path(value).expanduser()).resolve())
+    def model_resource(value):
+        windows=PureWindowsPath(value)
+        if windows.drive and not windows.is_absolute():
+            raise ValueError('Use an absolute Windows model path, not a drive-relative path')
+        if windows.is_absolute() and not Path(value).is_absolute():
+            return str(windows)
+        if (Path(value).is_absolute() or value.startswith(('.', '~', '/'))
+                or '\\' in value or len(value.split('/'))>2):
+            return resource(value)
+        return value
     data=dict(config.data)
     for key in ('path','train','validation','test','inference'):
         if data.get(key) is not None:data[key]=resource(data[key])
     tok=dict(config.tokenizer)
-    if tok.get('local_files_only',True):
-        for key in ('tokenizer_name_or_path','model_name_or_path'):
-            if tok.get(key):tok[key]=resource(tok[key])
+    for key in ('tokenizer_name_or_path','model_name_or_path'):
+        if tok.get(key):tok[key]=model_resource(tok[key])
     model=dict(config.model);backbone=dict(model.get('backbone',{}))
-    if backbone.get('local_files_only',True) and backbone.get('model_name_or_path'):
-        backbone['model_name_or_path']=resource(backbone['model_name_or_path'])
+    if backbone.get('model_name_or_path'):
+        backbone['model_name_or_path']=model_resource(backbone['model_name_or_path'])
     if backbone.get('offload_folder'):
         backbone['offload_folder']=resource(backbone['offload_folder'])
     if backbone:model['backbone']=backbone
     views=dict(config.views)
     if views.get('cache_dir'):views['cache_dir']=resource(views['cache_dir'])
     generator=dict(views.get('generator',{}))
-    if generator.get('local_files_only',True):
-        for key in ('model_name_or_path','tokenizer_name_or_path'):
-            if generator.get(key):generator[key]=resource(generator[key])
+    for key in ('model_name_or_path','tokenizer_name_or_path'):
+        if generator.get(key):generator[key]=model_resource(generator[key])
     if generator:views['generator']=generator
     return replace(config,data=data,tokenizer=tok,model=model,views=views,output_dir=resource(config.output_dir),
         checkpoint_dir=resource(config.checkpoint_dir) if config.checkpoint_dir else None,
@@ -127,7 +139,11 @@ def build_components(config,*,prepare_only=False,training_augmentation=True,
             raise ValueError('Configure model.backbone.model_name_or_path or inject a FrozenBackbone')
         b=BackboneConfig(**m['backbone'])
         encoder=EmoPersoEncoder.from_pretrained(b,tokenizer=tokenizer,shared_hidden_size=m.get('shared_hidden_size',4096),shared_device=m.get('shared_device'))
-        backbone_identity={'kind':'pretrained','id':m.get('backbone_id') or b.revision or Path(b.model_name_or_path).name}
+        local=Path(b.model_name_or_path).is_dir()
+        backbone_identity={'kind':'local' if local else 'hub',
+            'source':str(Path(b.model_name_or_path).resolve()) if local else b.model_name_or_path,
+            'revision':None if local else getattr(encoder.backbone.model.config,'_commit_hash',None) or b.revision,
+            'id':m.get('backbone_id')}
     else:
         if not isinstance(backbone,FrozenBackbone):raise TypeError('backbone must be a FrozenBackbone')
         if backbone.tokenizer.encoding_fingerprint!=tokenizer.encoding_fingerprint:
@@ -270,8 +286,8 @@ def main(argv=None):
     except (ValueError,TypeError,OSError,DataContractError) as exc:parser.exit(2,str(exc)+'\n')
     except RuntimeError as exc:
         from .backbone import BackboneLoadError
-        from .generation import GenerationLoadError
-        if not isinstance(exc,(BackboneLoadError,GenerationLoadError)):raise
+        from .generation import GenerationLoadError,GenerationExecutionError
+        if not isinstance(exc,(BackboneLoadError,GenerationLoadError,GenerationExecutionError)):raise
         parser.exit(2,str(exc)+'\n')
 
 

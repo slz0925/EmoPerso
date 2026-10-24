@@ -15,7 +15,7 @@ tokenizer, model, criterion, preparer, training, identity = build_components(con
 
 To reuse already loaded resources, supply `tokenizer=...`, `backbone=...` and optionally `generator=...`. The Backbone must be a `FrozenBackbone` bound to the same tokenizer encoding. Supply a nonempty JSON-serializable `backbone_identity` describing its stable weight version; checkpoints compare this identity.
 
-## Encode and optimize
+## Encode and optimise
 
 ```python
 from emoperso.datasets import load_dataset, iter_batches
@@ -45,6 +45,8 @@ Use `Trainer` for accumulation, scheduling, validation, checkpoints and resume. 
 
 A generator implements `generate(prompt, *, seed=None) -> GenerationResult` and exposes a JSON-serializable `identity` containing its model version and generation settings. `HFCausalLMGenerator` loads a decoder-only model with its own tokenizer. `from_components(model, tokenizer, config)` supports a caller-owned CausalLM. Generation is outside the differentiable model; the model learns from accepted, source-bound views and candidates.
 
+Return unsuccessful results for content rejections, and raise for model/tokenizer execution failures. The generation boundary also recognises `error` and `*_error` statuses (with optional `:details`) as execution failures, sanitises provider errors and aborts cache creation for that user. A malformed result object is a protocol failure, not an empty response.
+
 ## Module map
 
 | Modules | Responsibility |
@@ -59,7 +61,7 @@ A generator implements `generate(prompt, *, seed=None) -> GenerationResult` and 
 | reasoning, reasoning_selection, reasoning_model | Candidates, scores, selection and fusion |
 | view_preparation, training, evaluation, checkpointing, experiment | View caches, training, prediction, recovery and CLI |
 
-The package root exports lightweight data, label and metric functions. Import model modules explicitly when model dependencies are available.
+The package root exports label and metric functions, together with `DataContractError`. Import model modules explicitly when model dependencies are available.
 
 ## Dependencies and distributions
 

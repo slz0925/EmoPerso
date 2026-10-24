@@ -29,11 +29,11 @@ python -m pip install .
 
 The package supports Python 3.11 or newer. For a minimal installation, use `pip install .` for data and metrics, or `pip install ".[tokenizer]"` for tokenization alone. Use `pip install ".[backbone]"` to install model dependencies within the supported version ranges.
 
-Provide compatible DeepSeek-V3 weights, tokenizer resources and user data. Augmentation and reasoning also need a generation model with its own tokenizer. Model loading supports local paths and explicitly enabled Hub access. Full DeepSeek-V3 needs substantial memory; configure device placement and offloading for your hardware.
+The configurations select [DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3/tree/e815299b0bcbac849fa540c768ef21845365c9eb) at revision `e815299b0bcbac849fa540c768ef21845365c9eb` for the frozen Backbone, generation and tokenization. Prepare this snapshot in the Hugging Face cache or configure local directories; loading is offline by default. Full DeepSeek-V3 needs substantial memory and compatible hardware; see [resource configuration](docs/training.md#resources-and-command-settings).
 
 ## Configuration and data
 
-Edit [configs/emoperso_train.toml](configs/emoperso_train.toml) with your resource paths and device settings. The evaluation and prediction templates use the same model settings. Resource paths in TOML/JSON resolve relative to the configuration file; CLI paths resolve relative to the current directory.
+Edit [configs/emoperso_train.toml](configs/emoperso_train.toml) with your data paths and device settings. The evaluation and prediction templates use the same model settings. Hub IDs remain unchanged; prefix local relative model paths with `./` or `../`. Local paths in TOML/JSON resolve relative to the configuration file; CLI paths resolve relative to the current directory.
 
 CSV/JSONL inputs contain `user_id`, `text`, and, for supervised users, MBTI labels and a `train`, `validation` or `test` partition. Post-level input also has `post_id`. Dataset identity namespaces user IDs, and all posts of a user share one partition. Unlabelled input uses `inference`.
 

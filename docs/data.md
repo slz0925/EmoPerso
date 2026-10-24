@@ -4,7 +4,7 @@
 
 ## Labels and metrics
 
-The canonical bit order is `(I/E, N/S, T/F, P/J)`, with class 1 equal to `E, S, F, J`. The public metric display names retain `I/E, S/N, T/F, P/J`; the second display name does not reverse the encoding.
+The canonical bit order is `(I/E, N/S, T/F, P/J)`, with class 1 equal to `E, S, F, J`. The prediction dimensions are displayed as I/E, S/N, T/F and P/J, with positive classes E, S, F and J.
 
 | Dimension | 0 | 1 |
 |---|---|---|
