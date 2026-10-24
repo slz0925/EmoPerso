@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emoperso"
+version = "0.1.0"
+description = "Emotion-aware personality modelling with frozen language models"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["numpy"]
+license = "MIT"
+license-files = ["LICENSE"]
+
+[project.optional-dependencies]
+tokenizer = ["transformers>=4.40.2,<5"]
+backbone = ["torch>=2.6,<3", "transformers>=4.51.3,<5", "accelerate>=1", "packaging>=20"]
+
+[tool.setuptools]
+packages = ["emoperso"]
+include-package-data = false
+
+[tool.setuptools.data-files]
+"share/emoperso/configs" = ["configs/emoperso_train.toml", "configs/emoperso_evaluate.toml", "configs/emoperso_predict.toml"]

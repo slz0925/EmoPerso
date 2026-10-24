@@ -1,0 +1,34 @@
+# Python and build files
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv*/
+venv/
+
+# Local data and outputs
+/data/
+/datasets/
+/runs/
+/checkpoints/
+/cache/
+/.cache/
+*.pt
+*.pth
+*.safetensors
+*.sqlite*
+*.db*
+
+# Local configuration
+.env
+.env.*
+!.env.example
+/config.local.*
+*.pem
+*.key
+
+# System files
+.DS_Store
+Thumbs.db

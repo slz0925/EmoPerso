@@ -1,0 +1,204 @@
+"""Reusable frozen CausalLM generation with configurable backends.
+
+Custom backends implement ``generate(prompt, *, seed=None) -> GenerationResult``
+and expose a JSON-serializable ``identity`` describing their model/settings.
+"""
+from dataclasses import asdict, dataclass, field
+import math
+from numbers import Integral, Real
+import threading
+
+_RNG_LOCK = threading.RLock()
+
+
+class GenerationLoadError(RuntimeError):
+    """The configured generation model or tokenizer could not be loaded."""
+
+
+def _positive_int(value, name):
+    if isinstance(value, bool) or not isinstance(value, Integral) or value < 1:
+        raise ValueError(f"{name} must be a positive integer")
+
+
+@dataclass(frozen=True)
+class GenerationConfig:
+    model_name_or_path: str
+    tokenizer_name_or_path: str | None = None
+    revision: str | None = None
+    local_files_only: bool = True
+    dtype: str = "auto"
+    device: str | None = None
+    device_map: str | dict | None = None
+    temperature: float = 1.
+    top_p: float = .9
+    max_new_tokens: int = 512
+    max_prompt_tokens: int = 2048
+    do_sample: bool = True
+    seed: int = 42
+    use_chat_template: bool = True
+
+    def __post_init__(self):
+        for name in ("model_name_or_path", "tokenizer_name_or_path", "revision", "device"):
+            value = getattr(self, name)
+            if (name == "model_name_or_path" or value is not None) and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"{name} must be a nonempty string")
+        if self.dtype not in ("auto", "float32", "float16", "bfloat16"):
+            raise ValueError("Unsupported generation dtype")
+        if self.device is not None and self.device_map is not None:
+            raise ValueError("Choose device or device_map")
+        if self.device_map is not None and not isinstance(self.device_map, (str, dict)):
+            raise ValueError("device_map must be a string or mapping")
+        for name in ("local_files_only", "do_sample", "use_chat_template"):
+            if not isinstance(getattr(self, name), bool):
+                raise ValueError(f"{name} must be boolean")
+        for name in ("temperature", "top_p"):
+            x = getattr(self, name)
+            if isinstance(x, bool) or not isinstance(x, Real) or not math.isfinite(x) or x <= 0:
+                raise ValueError(f"{name} must be finite and positive")
+        if self.top_p > 1:
+            raise ValueError("top_p must be <=1")
+        for name in ("max_prompt_tokens", "max_new_tokens"):
+            _positive_int(getattr(self, name), name)
+        if isinstance(self.seed, bool) or not isinstance(self.seed, int) or not 0 <= self.seed < 2**63:
+            raise ValueError("seed must be an integer in [0,2**63)")
+
+
+@dataclass(frozen=True)
+class GenerationResult:
+    text: str = field(default="", repr=False)
+    status: str = "ok"
+    metadata: dict = field(default_factory=dict)
+
+    @property
+    def successful(self):
+        return self.status == "ok" and isinstance(self.text, str) and bool(self.text.strip())
+
+
+class HFCausalLMGenerator:
+    """Lazy AutoModelForCausalLM + its own tokenizer; sequential bounded requests.
+
+    Loads local safetensors by default with remote code disabled. Resource
+    loading failures raise GenerationLoadError. Over-budget prompts and
+    unfinished responses return unsuccessful GenerationResult values.
+    """
+    def __init__(self, config):
+        if not isinstance(config, GenerationConfig):
+            raise TypeError("Expected GenerationConfig")
+        self.config = config
+        self.model = self.tokenizer = None
+
+    @property
+    def identity(self):
+        return {"backend": "hf-causal-lm-v1", **asdict(self.config)}
+
+    @classmethod
+    def from_components(cls, model, tokenizer, config):
+        """Explicit injection of an executable compatible CausalLM/tokenizer."""
+        obj = cls(config)
+        obj._attach(model, tokenizer)
+        return obj
+
+    def _attach(self, model, tokenizer):
+        import torch
+        if (not isinstance(model, torch.nn.Module) or not callable(getattr(model, "generate", None))
+                or getattr(model.config, "is_encoder_decoder", False)):
+            raise ValueError("Expected a decoder-only CausalLM with generate()")
+        vocab = tokenizer.get_vocab()
+        if not vocab or min(vocab.values()) < 0 or max(vocab.values()) >= model.get_input_embeddings().weight.shape[0]:
+            raise ValueError("Generation tokenizer IDs exceed model embeddings")
+        if model.get_output_embeddings() is None or max(vocab.values()) >= model.get_output_embeddings().weight.shape[0]:
+            raise ValueError("Generation tokenizer IDs exceed LM head")
+        eos = tokenizer.eos_token_id
+        if eos is None or eos not in vocab.values():
+            raise ValueError("Generation tokenizer requires a valid EOS")
+        model.requires_grad_(False)
+        for parameter in model.parameters():
+            parameter.grad = None
+        model.eval()
+        self.model, self.tokenizer = model, tokenizer
+
+    def load(self):
+        if self.model is not None:
+            return self
+        try:
+            return self._load_resources()
+        except (OSError, RuntimeError, ValueError, TypeError, ImportError, AttributeError) as exc:
+            raise GenerationLoadError(
+                "Cannot load generation resources: check model/tokenizer paths, revision, "
+                "complete safetensors weights, dependencies and device settings"
+            ) from exc
+
+    def _load_resources(self):
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        c = self.config
+        options = dict(revision=c.revision, local_files_only=c.local_files_only, trust_remote_code=False)
+        tokenizer = AutoTokenizer.from_pretrained(c.tokenizer_name_or_path or c.model_name_or_path, **options)
+        model, info = AutoModelForCausalLM.from_pretrained(c.model_name_or_path, **options,
+            torch_dtype="auto" if c.dtype == "auto" else getattr(torch, c.dtype),
+            device_map=c.device_map, use_safetensors=True, output_loading_info=True,
+            ignore_mismatched_sizes=False)
+        if any(info.get(k) for k in ("missing_keys", "mismatched_keys", "unexpected_keys", "error_msgs")):
+            raise ValueError("Incomplete or incompatible CausalLM weights")
+        if c.device is not None:
+            model.to(c.device)
+        self._attach(model, tokenizer)
+        return self
+
+    def generate(self, prompt, *, seed=None):
+        if not isinstance(prompt, str) or not prompt.strip():
+            return GenerationResult(status="empty_prompt")
+        if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2**63):
+            raise ValueError("seed must be an integer in [0,2**63)")
+        self.load()
+        try:
+            import torch
+            from .backbone import _embedding_device
+            c, tokenizer, model = self.config, self.tokenizer, self.model
+            if c.use_chat_template and getattr(tokenizer, "chat_template", None):
+                prompt = tokenizer.apply_chat_template([{"role": "user", "content": prompt}],
+                    tokenize=False, add_generation_prompt=True)
+                add_special_tokens = False
+            else:
+                add_special_tokens = True
+            encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=add_special_tokens,
+                                truncation=False, return_token_type_ids=False)
+            n = encoded["input_ids"].shape[1]
+            meta = {"prompt_tokens": n, "seed": c.seed if seed is None else seed}
+            if not n or n > c.max_prompt_tokens:
+                return GenerationResult(status="prompt_budget_exceeded", metadata=meta)
+            context = getattr(model.config, "max_position_embeddings", None) or getattr(model.config, "n_positions", None)
+            if isinstance(context, int) and n+c.max_new_tokens > context:
+                return GenerationResult(status="context_budget_exceeded", metadata=meta)
+            inputs = {k: v.to(_embedding_device(model)) for k, v in encoded.items() if k in ("input_ids", "attention_mask")}
+            options = dict(max_new_tokens=c.max_new_tokens, do_sample=c.do_sample,
+                pad_token_id=tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id,
+                eos_token_id=tokenizer.eos_token_id, forced_eos_token_id=None,
+                return_dict_in_generate=True, output_scores=False)
+            if c.do_sample:
+                options.update(temperature=c.temperature, top_p=c.top_p, top_k=0)
+            # Restore caller RNG state, including CUDA states; serialize seeded
+            # calls in this backend rather than perturbing training randomness.
+            devices = list(range(torch.cuda.device_count())) if torch.cuda.is_available() else []
+            with _RNG_LOCK, torch.random.fork_rng(devices=devices), torch.no_grad():
+                torch.manual_seed(meta["seed"])
+                model.eval()
+                sequence = model.generate(**inputs, **options).sequences
+            if sequence.ndim != 2 or sequence.shape[0] != 1 or not torch.equal(sequence[0, :n], inputs["input_ids"][0]):
+                return GenerationResult(status="invalid_generation_shape", metadata=meta)
+            new = sequence[0, n:].tolist()
+            meta["generated_tokens"] = len(new)
+            text = tokenizer.decode(new, skip_special_tokens=True, clean_up_tokenization_spaces=False).strip()
+            if not new or not text:
+                return GenerationResult(status="empty_output", metadata=meta)
+            if len(new) >= c.max_new_tokens and new[-1] != tokenizer.eos_token_id:
+                return GenerationResult(status="length_limit", metadata=meta)
+            return GenerationResult(text, metadata=meta)
+        except (OSError, RuntimeError, ValueError, TypeError, ImportError, AttributeError) as exc:
+            # Keep provider messages/prompts/paths out of default logs.
+            return GenerationResult(status="generation_error", metadata={"error_type": type(exc).__name__})
+
+    def generate_many(self, prompts):
+        """Streaming results; no padded prompt matrix or unbounded request list."""
+        for prompt in prompts:
+            yield self.generate(prompt)

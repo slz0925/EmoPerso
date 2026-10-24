@@ -1,0 +1,48 @@
+# Configure your data, tokenizer, weights and devices before running.
+output_dir = "../runs/evaluate"
+[data]
+train = "../local/train.jsonl"
+validation = "../local/validation.jsonl"
+test = "../local/test.jsonl"
+dataset_id = "my_dataset"
+layout = "users"
+preprocess = true
+order = "source"
+[data.text]
+max_posts = 64
+max_post_chars = 4096
+max_user_chars = 65536
+[tokenizer]
+tokenizer_name_or_path = "../local/deepseek-v3-tokenizer"
+local_files_only = true
+max_length = 2048
+[model]
+shared_hidden_size = 4096
+shared_device = "cuda:0"
+backbone_id = "my-frozen-deepseek-v3-checkpoint-version"
+[model.backbone]
+model_name_or_path = "../local/deepseek-v3"
+local_files_only = true
+device_map = "auto"
+dtype = "bfloat16"
+# Runtime settings shared with training.
+[training]
+batch_size = 1
+seed = 42
+precision = "bf16"
+[views]
+# Match the checkpoint's style categories and model structure.
+augmentation = "both"
+reasoning = true
+policy = "reuse"
+cache_dir = "../local/private_generated_text"
+candidate_microbatch = 1
+[views.generator]
+model_name_or_path = "../local/generation-model"
+local_files_only = true
+device_map = "auto"
+dtype = "bfloat16"
+top_p = 0.9
+temperature = 1.0
+max_new_tokens = 512
+max_prompt_tokens = 2048
