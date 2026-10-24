@@ -15,9 +15,67 @@ class GenerationLoadError(RuntimeError):
     """The configured generation model or tokenizer could not be loaded."""
 
 
+class GenerationExecutionError(RuntimeError):
+    """Generation execution failed; the request has no cacheable outcome."""
+
+
+def generate_checked(generator, prompt, *, seed=None):
+    """Call a backend outside content validation, without exposing provider errors.
+
+    Content rejections return GenerationResult. Backends must raise on execution
+    failure, or return an error status (error, *_error, optionally :details).
+    Invalid return objects and tensor-shape failures are protocol errors.
+    """
+    try:
+        result = generator.generate(prompt, seed=seed)
+    except GenerationLoadError:
+        raise GenerationLoadError("Generation resources could not be loaded") from None
+    except Exception:
+        raise GenerationExecutionError("Generation backend execution failed") from None
+    if not isinstance(result, GenerationResult) or not isinstance(result.status, str):
+        raise GenerationExecutionError("Generation backend returned an invalid result")
+    status = result.status.split(':', 1)[0].casefold()
+    if (status == 'error' or status.endswith('_error') or
+            status in ('oom', 'cuda_oom', 'invalid_generation_shape', 'invalid_generator_result')):
+        raise GenerationExecutionError("Generation backend reported an execution failure")
+    if not isinstance(result.text, str) or not isinstance(result.metadata, dict):
+        raise GenerationExecutionError("Generation backend returned an invalid payload")
+    return result
+
+
 def _positive_int(value, name):
     if isinstance(value, bool) or not isinstance(value, Integral) or value < 1:
         raise ValueError(f"{name} must be a positive integer")
+
+
+def _check_causal_loading_info(info, model):
+    """Require all CausalLM tensors, allowing only declared native V3 MTP extras.
+
+    Transformers' autoregressive V3 model does not construct the checkpoint's
+    multi-token prediction modules. Its LM head is required, never an extra.
+    """
+    if any(info.get(k) for k in ('missing_keys', 'mismatched_keys', 'error_msgs')):
+        raise ValueError('Incomplete or incompatible CausalLM weights')
+    extras = set(info.get('unexpected_keys', ()))
+    if not extras:
+        return
+    from transformers import DeepseekV3ForCausalLM
+    config = model.config
+    if not isinstance(model, DeepseekV3ForCausalLM) or config.model_type != 'deepseek_v3':
+        raise ValueError('Unexpected CausalLM weights')
+    count = getattr(config, 'num_nextn_predict_layers', 0)
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        raise ValueError('Invalid declared MTP layer count')
+    # The MTP decoder has the ordinary final-layer tensors plus these six
+    # components in the official V3 weight index. Quantized decoder buffers are
+    # obtained from the actually constructed model rather than ignored by suffix.
+    suffixes = set(model.model.layers[-1].state_dict()) | {
+        'embed_tokens.weight', 'enorm.weight', 'hnorm.weight', 'eh_proj.weight',
+        'shared_head.norm.weight', 'shared_head.head.weight'}
+    allowed = {f'model.layers.{i}.{key}' for i in
+               range(config.num_hidden_layers, config.num_hidden_layers + count) for key in suffixes}
+    if extras - allowed:
+        raise ValueError('Unexpected non-MTP CausalLM weights')
 
 
 @dataclass(frozen=True)
@@ -78,7 +136,8 @@ class HFCausalLMGenerator:
     """Lazy AutoModelForCausalLM + its own tokenizer; sequential bounded requests.
 
     Loads local safetensors by default with remote code disabled. Resource
-    loading failures raise GenerationLoadError. Over-budget prompts and
+    loading failures raise GenerationLoadError; execution failures raise
+    GenerationExecutionError. Over-budget prompts and
     unfinished responses return unsuccessful GenerationResult values.
     """
     def __init__(self, config):
@@ -126,7 +185,7 @@ class HFCausalLMGenerator:
             raise GenerationLoadError(
                 "Cannot load generation resources: check model/tokenizer paths, revision, "
                 "complete safetensors weights, dependencies and device settings"
-            ) from exc
+            ) from None
 
     def _load_resources(self):
         import torch
@@ -138,8 +197,7 @@ class HFCausalLMGenerator:
             torch_dtype="auto" if c.dtype == "auto" else getattr(torch, c.dtype),
             device_map=c.device_map, use_safetensors=True, output_loading_info=True,
             ignore_mismatched_sizes=False)
-        if any(info.get(k) for k in ("missing_keys", "mismatched_keys", "unexpected_keys", "error_msgs")):
-            raise ValueError("Incomplete or incompatible CausalLM weights")
+        _check_causal_loading_info(info, model)
         if c.device is not None:
             model.to(c.device)
         self._attach(model, tokenizer)
@@ -151,6 +209,7 @@ class HFCausalLMGenerator:
         if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2**63):
             raise ValueError("seed must be an integer in [0,2**63)")
         self.load()
+        stage = "prompt encoding"
         try:
             import torch
             from .backbone import _embedding_device
@@ -170,6 +229,7 @@ class HFCausalLMGenerator:
             context = getattr(model.config, "max_position_embeddings", None) or getattr(model.config, "n_positions", None)
             if isinstance(context, int) and n+c.max_new_tokens > context:
                 return GenerationResult(status="context_budget_exceeded", metadata=meta)
+            stage = "input placement"
             inputs = {k: v.to(_embedding_device(model)) for k, v in encoded.items() if k in ("input_ids", "attention_mask")}
             options = dict(max_new_tokens=c.max_new_tokens, do_sample=c.do_sample,
                 pad_token_id=tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id,
@@ -179,13 +239,15 @@ class HFCausalLMGenerator:
                 options.update(temperature=c.temperature, top_p=c.top_p, top_k=0)
             # Restore caller RNG state, including CUDA states; serialize seeded
             # calls in this backend rather than perturbing training randomness.
+            stage = "model execution"
             devices = list(range(torch.cuda.device_count())) if torch.cuda.is_available() else []
             with _RNG_LOCK, torch.random.fork_rng(devices=devices), torch.no_grad():
                 torch.manual_seed(meta["seed"])
                 model.eval()
                 sequence = model.generate(**inputs, **options).sequences
             if sequence.ndim != 2 or sequence.shape[0] != 1 or not torch.equal(sequence[0, :n], inputs["input_ids"][0]):
-                return GenerationResult(status="invalid_generation_shape", metadata=meta)
+                raise GenerationExecutionError("Invalid generation tensor shape or prompt prefix")
+            stage = "response decoding"
             new = sequence[0, n:].tolist()
             meta["generated_tokens"] = len(new)
             text = tokenizer.decode(new, skip_special_tokens=True, clean_up_tokenization_spaces=False).strip()
@@ -194,9 +256,10 @@ class HFCausalLMGenerator:
             if len(new) >= c.max_new_tokens and new[-1] != tokenizer.eos_token_id:
                 return GenerationResult(status="length_limit", metadata=meta)
             return GenerationResult(text, metadata=meta)
-        except (OSError, RuntimeError, ValueError, TypeError, ImportError, AttributeError) as exc:
-            # Keep provider messages/prompts/paths out of default logs.
-            return GenerationResult(status="generation_error", metadata={"error_type": type(exc).__name__})
+        except Exception:
+            # Stage is controlled here; never include provider text, paths or a
+            # chained exception that could expose the private prompt.
+            raise GenerationExecutionError("Generation failed during " + stage) from None
 
     def generate_many(self, prompts):
         """Streaming results; no padded prompt matrix or unbounded request list."""

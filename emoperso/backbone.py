@@ -79,7 +79,7 @@ def _model_dimensions(config):
             _positive(getattr(config, "vocab_size", None), "vocab_size"))
 
 
-def _check_loading_info(info, config):
+def _check_loading_info(info, model):
     """Validate encoder tensors and permitted CausalLM checkpoint extras.
 
     CausalLM checkpoints have an unused LM head and may have MTP layers after the
@@ -87,16 +87,22 @@ def _check_loading_info(info, config):
     """
     if any(info.get(key) for key in ("missing_keys", "mismatched_keys", "error_msgs")):
         raise BackboneLoadError("Missing, mismatched or invalid Backbone weights")
+    config = model.config
     extras = info.get("unexpected_keys", [])
     causal = "DeepseekV3ForCausalLM" in (getattr(config, "architectures", None) or [])
     start = config.num_hidden_layers
     count = getattr(config, "num_nextn_predict_layers", 0)
     if not isinstance(count, int) or isinstance(count, bool) or count < 0:
         raise BackboneLoadError("Invalid declared MTP layer count")
-    allowed_prefixes = tuple(f"{prefix}layers.{i}." for i in range(start, start+count)
-                             for prefix in ("", "model."))
+    # Use the constructed final decoder's tensors, including any FP8 scales,
+    # plus the six MTP-specific components in the official V3 checkpoint.
+    suffixes = set(model.layers[-1].state_dict()) | {
+        "embed_tokens.weight", "enorm.weight", "hnorm.weight", "eh_proj.weight",
+        "shared_head.norm.weight", "shared_head.head.weight"}
+    allowed = {f"{prefix}layers.{i}.{key}" for i in range(start, start+count)
+               for prefix in ("", "model.") for key in suffixes}
     rejected = [key for key in extras if not (causal and (
-        key == "lm_head.weight" or allowed_prefixes and key.startswith(allowed_prefixes)))]
+        key == "lm_head.weight" or key in allowed))]
     if rejected:
         raise BackboneLoadError(f"Unexpected non-head Backbone weights ({len(rejected)} keys); incompatible checkpoint")
 
@@ -135,7 +141,7 @@ def load_backbone(config=None, *, tokenizer):
             if getattr(config, key) is not None:
                 options[key] = getattr(config, key)
         model, info = DeepseekV3Model.from_pretrained(config.model_name_or_path, **options)
-        _check_loading_info(info, model_config)
+        _check_loading_info(info, model)
         if config.device is not None:
             model.to(config.device)
         result = FrozenBackbone(model, tokenizer=tokenizer)
@@ -279,7 +285,9 @@ class FrozenBackbone(nn.Module):
     def forward(self, batch):
         inputs, mask, metadata = self._inputs(batch)
         self.model.eval()
-        with torch.no_grad():
+        # Keep native weight precision and FP32 routing under the caller's AMP.
+        # Dispatched frozen layers may execute on either CPU or CUDA.
+        with torch.no_grad(), torch.autocast("cpu", enabled=False), torch.autocast("cuda", enabled=False):
             result = self.model(**inputs, use_cache=False, return_dict=True,
                                 output_hidden_states=False, output_attentions=False)
         hidden = getattr(result, "last_hidden_state", None)

@@ -5,6 +5,7 @@ import json
 from bisect import bisect_left, bisect_right
 from dataclasses import asdict, dataclass
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 
 from .errors import DataContractError
 from .text_data import find_explicit_type, text_sha
@@ -19,8 +20,9 @@ class TokenizerConfig:
     """Tokenizer resource selection and input encoding settings.
 
     tokenizer_name_or_path may name an official/mirrored DeepSeek-V3 tokenizer
-    repository or a local directory. None uses model_name_or_path. revision=None
-    follows the selected source's default; pin a commit for reproducible studies.
+    repository or a local directory. None uses model_name_or_path.
+    `revision=None` uses the source's default revision. Specify a revision to
+    select a particular version.
     """
     model_name_or_path: str = REPO_ID
     revision: str | None = None
@@ -105,8 +107,10 @@ class DeepSeekTokenizerAdapter(TokenizerAdapter):
             raise DataContractError("BOS must be distinct from EOS and PAD")
         if _integer(backend.model_max_length) and backend.model_max_length < config.max_length:
             raise DataContractError("Configured budget exceeds tokenizer model_max_length")
-        resolved = backend.init_kwargs.get("_commit_hash")
-        super().__init__(backend, tokenizer_id=source, revision=resolved or config.revision or "unversioned-local",
+        local = Path(source).is_dir()
+        resolved = None if local else backend.init_kwargs.get("_commit_hash")
+        revision = "unversioned-local" if local else resolved or config.revision or "unversioned-hub"
+        super().__init__(backend, tokenizer_id=source, revision=revision,
                          max_length=config.max_length, padding_side=config.padding_side)
         self.special_ids |= frozenset(k for k, v in backend.added_tokens_decoder.items() if v.special)
         self.valid_token_ids, self.bos_token_id = valid_ids, backend.bos_token_id

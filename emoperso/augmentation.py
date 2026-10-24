@@ -14,7 +14,7 @@ import unicodedata
 
 from .errors import DataContractError
 from .emotion import EmotionLabeler, retained_posts
-from .generation import GenerationLoadError, GenerationResult, _positive_int
+from .generation import generate_checked, _positive_int
 from .text_data import SEPARATOR, find_explicit_type, has_content, text_sha
 from .token_inputs import TokenizerAdapter, batch_signature, validate_identifier
 
@@ -316,13 +316,7 @@ class TextAugmenter:
         self.config_id = _digest({"policy": "local-view-v1", "config": asdict(self.config), "generator": generator.identity})
 
     def _generate(self, prompt, seed):
-        try:
-            result = self.generator.generate(prompt, seed=seed)
-            return result if isinstance(result, GenerationResult) else GenerationResult(status="invalid_generator_result")
-        except GenerationLoadError:
-            raise
-        except Exception as exc:
-            return GenerationResult(status="generator_error", metadata={"error_type": type(exc).__name__})
+        return generate_checked(self.generator, prompt, seed=seed)
 
     def generate(self, batch):
         batch_signature(batch)

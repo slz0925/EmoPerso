@@ -4,9 +4,13 @@
 
 ## Resources and command settings
 
-The templates in `configs/` use external resources under `../local/`. Set the data, tokenizer, Backbone and generator paths, then choose devices with sufficient memory. Templates use GPU placement and BF16; CPU execution uses FP32. Keep model dimensions, tokenizer settings, style categories and weight identity consistent with the checkpoint.
+The templates select the official post-trained `deepseek-ai/DeepSeek-V3` at revision `e815299b0bcbac849fa540c768ef21845365c9eb` for the Backbone, generator and tokenizer. With `local_files_only=true`, Hugging Face loads an already cached snapshot or local files and fails if required files are missing. It does not download weights. Prepare resources separately, set the data paths under `../local/` and choose devices with sufficient memory.
 
-TOML and JSON are supported. Resource paths, including the Backbone offload folder, resolve relative to the configuration file. CLI path overrides resolve relative to the current directory. Optional TOML fields can be omitted.
+Backbone and generator use separate hidden-state and CausalLM interfaces. The generator uses the tokenizer from its model source unless `views.generator.tokenizer_name_or_path` is specified. Templates use GPU placement and BF16; CPU execution uses FP32. With Transformers 4.51.3, native FP8 execution requires Triton and CUDA GPUs with compute capability 8.9 or newer; setting BF16 does not convert FP8 weights.
+
+TOML and JSON are supported. Unprefixed model names and `namespace/name` pairs are Hub IDs, including in offline mode. Prefix local relative model directories with `./` or `../`; absolute paths, Windows paths and direct cache snapshot directories are also accepted. Local paths resolve relative to the configuration file regardless of `local_files_only`. Data, output, cache and offload paths are always local. CLI path overrides resolve relative to the current directory.
+
+For local resources, replace the three model/tokenizer sources with versioned directories and omit `revision`: Transformers does not use it to verify local files. A directory named after a commit is still a local directory, not proof of its contents. Record a meaningful `model.backbone_id` for the supplied weights and verify their origin when preparing them. Converted weights need their own identity. Checkpoints compare the source, effective Hub revision and declared Backbone ID; tokenizer encoding fingerprints describe the loaded tokenizer. Generation caches include configured sources, revisions and sampling settings. Use a new versioned directory or fresh cache when replacing local resources in place.
 
 | Template | Data sources | Runtime settings |
 |---|---|---|
@@ -16,7 +20,7 @@ TOML and JSON are supported. Resource paths, including the Backbone offload fold
 
 Evaluation and prediction use the shared `[training]` section for these three runtime fields. Other `TrainingConfig` fields take their defaults and do not run optimization, scheduling or early stopping. `seed` also controls reasoning generation. The model-compatible `views.augmentation` setting is retained to construct the Style Head; evaluation and prediction prepare reasoning candidates only.
 
-Root fields are `output_dir`, optional `checkpoint_dir`/`temp_dir`, and training-only `seeds`. Specify a stable `model.backbone_id` or revision for external weights. Enabled generation requires compatible generator resources; Python callers can inject them through `build_components`.
+Root fields are `output_dir`, optional `checkpoint_dir`/`temp_dir`, and training-only `seeds`. Keep model dimensions, tokenizer settings, style categories and resource identities consistent with the checkpoint. Python callers can inject compatible resources through `build_components`.
 
 ## Train and resume
 
@@ -32,6 +36,8 @@ python -m emoperso.experiment train --config configs/emoperso_train.toml --outpu
 `--until-epoch` stops at a completed epoch while preserving the configured `max_epochs` and schedule horizon. Resume restores that epoch boundary. To start a new run from compatible model weights, use `train --checkpoint path/to/checkpoint.pt --output path/to/new_run`.
 
 Training checks train/validation user isolation and shuffles training users with seed+epoch, including the final short batch. Gradient accumulation averages active microbatch losses, including short accumulation windows. Loss denominators and InfoNCE negative sets remain local to each microbatch. Inactive batches and FP16 overflow skips leave optimizer and scheduler progress unchanged.
+
+The training template uses two users per microbatch and four accumulation steps. InfoNCE requires at least two different emotion-valid users with accepted reasoning candidates in that microbatch; accumulation does not supply additional negatives. Epoch `InfoNCE` statistics distinguish eligible, active and successfully optimized microbatches, count contributing user occurrences, and report the active-batch mean loss. Check these alongside the other losses; short or insufficiently supervised batches may have no contrastive term.
 
 All trainable modules share one device; frozen Backbone weights may use a separate device map. CUDA supports FP16/BF16 mixed precision. The [architecture guide](architecture.md) defines the joint loss and task activity rules.
 
@@ -53,7 +59,9 @@ python -m emoperso.experiment prepare --config configs/emoperso_train.toml --par
 
 Prepare other partitions separately. Training uses augmentation and reasoning; validation, test and inference use reasoning only. Prompts use visible source text, excluding target labels. Cache entries bind user identity, partition, source, configuration and tokenizer, and may contain private text. Embeddings are recomputed through the current trainable layers. `candidate_microbatch` controls candidate encoding group size; backward activations can span multiple groups.
 
-Invalid generation resources stop the command with a loading error. Individual responses that fail length or quality checks are skipped and counted in preparation statistics.
+Loading and execution failures stop the command without caching the failed user record. Individual responses that fail length or quality checks are skipped and may produce a valid empty cached result. Only `emoperso-generated-inputs-v2` records are reused; run `prepare` with the current configuration before using `prepared`. Model/tokenizer paths and generation settings also participate in cache identity. Use versioned resource paths or a fresh cache when replacing resource files in place.
+
+Augmentation and reasoning share one lazy generator; the Backbone is a separate model instance. To avoid loading both sets of weights in the training process, run `prepare` for the required partitions in a separate process, then train with `policy="prepared"`. Cached text is re-encoded through the current trainable model.
 
 ## Evaluation and prediction
 

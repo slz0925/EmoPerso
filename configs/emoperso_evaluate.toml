@@ -1,4 +1,4 @@
-# Configure your data, tokenizer, weights and devices before running.
+# Configure data and devices; model resources must already be cached or local.
 output_dir = "../runs/evaluate"
 [data]
 train = "../local/train.jsonl"
@@ -13,15 +13,17 @@ max_posts = 64
 max_post_chars = 4096
 max_user_chars = 65536
 [tokenizer]
-tokenizer_name_or_path = "../local/deepseek-v3-tokenizer"
+tokenizer_name_or_path = "deepseek-ai/DeepSeek-V3"
+revision = "e815299b0bcbac849fa540c768ef21845365c9eb"
 local_files_only = true
 max_length = 2048
 [model]
 shared_hidden_size = 4096
 shared_device = "cuda:0"
-backbone_id = "my-frozen-deepseek-v3-checkpoint-version"
+backbone_id = "deepseek-ai/DeepSeek-V3@e815299b0bcbac849fa540c768ef21845365c9eb"
 [model.backbone]
-model_name_or_path = "../local/deepseek-v3"
+model_name_or_path = "deepseek-ai/DeepSeek-V3"
+revision = "e815299b0bcbac849fa540c768ef21845365c9eb"
 local_files_only = true
 device_map = "auto"
 dtype = "bfloat16"
@@ -38,7 +40,8 @@ policy = "reuse"
 cache_dir = "../local/private_generated_text"
 candidate_microbatch = 1
 [views.generator]
-model_name_or_path = "../local/generation-model"
+model_name_or_path = "deepseek-ai/DeepSeek-V3"
+revision = "e815299b0bcbac849fa540c768ef21845365c9eb"
 local_files_only = true
 device_map = "auto"
 dtype = "bfloat16"

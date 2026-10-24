@@ -19,7 +19,8 @@ class ViewPreparer:
     Each cache record is bound to the current dataset/user/partition, observed
     text/tokens and generation settings.
     Records contain private text: keep cache_dir outside any public package.
-    Empty generation results are valid cached outcomes. Pairing validates
+    Content-rejected empty results are valid cached outcomes; execution errors
+    abort the user record before any write. Pairing validates
     source bindings for both generated and cached records.
     """
     def __init__(self,tokenizer,*,augmenter=None,reasoner=None,cache_dir=None,
@@ -43,7 +44,7 @@ class ViewPreparer:
 
     def _row(self,row,training):
         aug=self.augmenter if training else None
-        binding={'policy':'emoperso-generated-inputs-v1','reasoning':source_binding(row),
+        binding={'policy':'emoperso-generated-inputs-v2','reasoning':source_binding(row),
             'augmentation':source_signature(row) if aug else None,
             'augmentation_config':aug.config_id if aug else None,
             'reasoning_config':self.reasoner.config_id if self.reasoner else None}

@@ -1,6 +1,5 @@
 """Stable Bernoulli entropy, bounded association, hard choice and preference."""
 from dataclasses import dataclass
-import math
 
 import torch
 from torch import nn
