@@ -8,7 +8,7 @@ from torch.nn import functional as F
 
 from .augmentation_model import user_mean
 from .backbone import _positive
-from .data import DataContractError
+from .errors import DataContractError
 from .interaction import _weight
 
 

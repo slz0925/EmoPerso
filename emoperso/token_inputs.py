@@ -9,7 +9,7 @@ from numbers import Integral
 
 import numpy as np
 
-from .data import DataContractError
+from .errors import DataContractError
 from .labels import bits_to_mbti, mbti_to_bits
 from .text_data import TextPost, UserText, SEPARATOR, has_content, text_sha
 

@@ -12,7 +12,7 @@ import random
 import re
 import unicodedata
 
-from .data import DataContractError
+from .errors import DataContractError
 from .emotion import EmotionLabeler, retained_posts
 from .generation import GenerationLoadError, GenerationResult, _positive_int
 from .text_data import SEPARATOR, find_explicit_type, has_content, text_sha

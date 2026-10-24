@@ -16,21 +16,11 @@ TOML and JSON are supported. Resource paths, including the Backbone offload fold
 
 Evaluation and prediction use the shared `[training]` section for these three runtime fields. Other `TrainingConfig` fields take their defaults and do not run optimization, scheduling or early stopping. `seed` also controls reasoning generation. The model-compatible `views.augmentation` setting is retained to construct the Style Head; evaluation and prediction prepare reasoning candidates only.
 
-| Section | Main fields |
-|---|---|
-| data | train, validation, test, inference or path; dataset_id, layout, preprocess, order, text |
-| tokenizer | tokenizer_name_or_path, revision, local_files_only, max_length, padding_side |
-| model | backbone, backbone_id, shared_hidden_size, shared_device, hidden_size, dropout, num_heads, attention_size |
-| model.backbone | model_name_or_path, revision, dtype, device or device_map, max_memory, offload_folder, attn_implementation |
-| training | batch_size, precision, seed; training commands also use optimization and validation settings |
-| views | augmentation, reasoning, generator, policy, cache_dir, augmentation_config, reasoning_config, candidate_microbatch |
-| losses | personality_weight, emotion_weight, lambda_mtl, lambda_cross, style_weight, consistency_weight, star_weight, contrastive_weight |
-
 Root fields are `output_dir`, optional `checkpoint_dir`/`temp_dir`, and training-only `seeds`. Specify a stable `model.backbone_id` or revision for external weights. Enabled generation requires compatible generator resources; Python callers can inject them through `build_components`.
 
 ## Train and resume
 
-The training template specifies 20 epochs, batch size 1, seed 42, Adam at .001, zero weight decay, eight accumulation steps, gradient clipping at 1, constant scheduling, BF16, validation every epoch and patience 5. Adjust these for the dataset and hardware. Additional options include AdamW, linear/cosine scheduling, warmup_steps, schedule_steps, min_improvement and threshold_search. `patience=0` disables early stopping.
+Set optimization, accumulation and validation options in the [training template](../configs/emoperso_train.toml) for your dataset and hardware. `TrainingConfig` also supports AdamW, linear/cosine scheduling, warmup and threshold search. `patience=0` disables early stopping.
 
 Run from the repository root after configuring resources, using a fresh output directory:
 
@@ -84,8 +74,8 @@ Both commands require checkpoint-compatible style categories, scoring settings, 
 
 A training run writes configuration, epoch records, results, preparation statistics and `checkpoints/best.pt`/`latest.pt`. `fit` restores the best model for prediction; `latest.pt` retains the last completed epoch's optimization state.
 
-Lightweight checkpoints contain trainable model state, persistent buffers, category/score metadata, optimizer/scheduler/scaler state, RNG, thresholds and progress. Frozen Backbone weights, tokenizer resources and generation models are supplied separately.
+Lightweight checkpoints save trainable model state, training and random state, thresholds and progress. Supply frozen Backbone weights, tokenizer resources and generation models separately.
 
-Checkpoint loading validates model structure, tokenizer and weight identity, category order and scoring settings. Strict resume additionally validates training, loss, preparation, schedule, run ownership and input source versions. Incompatible settings produce a loading error. Use weights-only transfer for a new compatible run; use resume with the original run's configuration and data versions. Load trusted local checkpoints through the restricted `torch.load(weights_only=True)` path.
+Checkpoint loading requires compatible model structure, tokenizer, weight identity, category order and scoring settings. Resume also requires the original run, configuration and input source versions; use weights-only transfer for a new compatible run. Load trusted local checkpoints through the restricted `torch.load(weights_only=True)` path.
 
 For independent training runs, set `seeds=[42,43,44]` in the training configuration. Each run has its own state; the summary reports validation means and population standard deviations. An explicit `--seed` overrides this list and starts a single run. Final test evaluation is a separate command.

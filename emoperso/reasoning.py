@@ -9,7 +9,7 @@ import random
 import re
 
 from .augmentation import _digest, _json, visible_segments, word_spans
-from .data import DataContractError
+from .errors import DataContractError
 from .generation import GenerationLoadError, GenerationResult, _positive_int
 from .text_data import find_explicit_type, has_content, text_sha
 from .token_inputs import batch_signature, user_text, validate_identifier

@@ -15,7 +15,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from .comment_index import normalize_timestamp
-from .data import DataContractError
+from .errors import DataContractError
 from .labels import mbti_to_bits
 from .raw_data import CsvSource, SourceSpan, fields_digest
 from .text_data import (CleanText, TextConfig, TextPost, UserText, clip_prefix,

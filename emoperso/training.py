@@ -12,7 +12,7 @@ import numpy as np
 import torch
 
 from .checkpointing import atomic_json,save_checkpoint,load_checkpoint,model_signature
-from .data import DataContractError
+from .errors import DataContractError
 from .datasets import iter_batches
 from .evaluation import (collect_predictions,check_disjoint,require_partition,
                          select_thresholds,thresholds_tuple)

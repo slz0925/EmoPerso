@@ -8,7 +8,7 @@ import tomllib
 
 import numpy as np
 
-from .data import DataContractError
+from .errors import DataContractError
 
 
 @dataclass(frozen=True)
@@ -97,7 +97,7 @@ def build_components(config,*,prepare_only=False,training_augmentation=True,
     from .generation import GenerationConfig,HFCausalLMGenerator
     from .interaction import EmoPersoInteractionModel,InteractionLoss
     from .mtl import EmoPersoMTL
-    from .preparation import ViewPreparer
+    from .view_preparation import ViewPreparer
     from .reasoning import ReasoningConfig,ReasoningGenerator
     from .reasoning_model import EmoPersoReasoningModel,ReasoningLoss
     from .training import TrainingConfig,seed_everything

@@ -7,7 +7,7 @@ from torch import nn
 
 from .augmentation import DEFAULT_STYLES
 from .augmentation_model import EmoPersoAugmentationModel,AugmentationOutput,AugmentationLoss
-from .data import DataContractError
+from .errors import DataContractError
 from .interaction import InteractionLoss,_weight
 from .reasoning import validate_reasoning_batches
 from .reasoning_selection import (EmotionReasoningAssociation,ReasoningFusion,information_gain,

@@ -13,7 +13,7 @@ try:
 except ImportError as exc:
     raise ImportError("Model features require the optional emoperso[backbone] dependencies") from exc
 
-from .data import DataContractError
+from .errors import DataContractError
 from .deepseek_tokenizer import REPO_ID, DeepSeekTokenizerAdapter
 from .token_inputs import validate_identifier
 

@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from .backbone import FrozenBackbone
-from .data import DataContractError
+from .errors import DataContractError
 
 
 def model_signature(model):

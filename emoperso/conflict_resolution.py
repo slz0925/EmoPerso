@@ -16,7 +16,7 @@ from .comment_index import (
     CORE_FIELDS, POLICY, _core, _source_span, fields_digest, normalize_comment_id,
     peak_memory_bytes,
 )
-from .data import DataContractError
+from .errors import DataContractError
 from .raw_data import (ReviewRequiredError, check_source, check_sqlite_snapshot,
                        load_users, pandora_user_key, read_span, write_json)
 

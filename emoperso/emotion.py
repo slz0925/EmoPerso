@@ -13,7 +13,7 @@ from types import MappingProxyType
 
 import numpy as np
 
-from .data import DataContractError
+from .errors import DataContractError
 from .token_inputs import batch_signature, _integer
 
 DEFAULT_EMOTIONS = ("joy", "anger", "sadness", "fear", "disgust", "surprise", "contempt")

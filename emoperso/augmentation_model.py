@@ -6,7 +6,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from .augmentation import DEFAULT_STYLES, style_categories, validate_pairs
-from .data import DataContractError
+from .errors import DataContractError
 from .interaction import EmoPersoInteractionModel, InteractionLoss, _weight
 
 

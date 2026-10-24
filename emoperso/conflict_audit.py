@@ -10,7 +10,7 @@ from collections import Counter
 from pathlib import Path
 
 from .comment_index import CORE_FIELDS, _core, _source_span, peak_memory_bytes
-from .data import DataContractError
+from .errors import DataContractError
 from .raw_data import ReviewRequiredError, SourceSpan, check_source, load_users, pandora_user_key, read_span, write_json
 
 COMPARISON_POLICY = "audit-only-v1: exact Unicode whitespace split/join comparison; no output text transformation"

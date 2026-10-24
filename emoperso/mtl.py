@@ -9,7 +9,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from .backbone import EmoPersoEncoder
-from .data import DataContractError
+from .errors import DataContractError
 from .emotion import DEFAULT_EMOTIONS, EmotionLabeler, emotion_categories
 from .token_inputs import batch_signature, _integer
 

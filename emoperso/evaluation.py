@@ -12,7 +12,7 @@ import tempfile
 
 import numpy as np
 
-from .data import DataContractError
+from .errors import DataContractError
 from .datasets import UserDataset, iter_batches
 from .labels import DIMENSIONS, bits_to_mbti
 from .metrics import evaluate_mbti, predictions_to_bits

@@ -15,7 +15,7 @@ from contextlib import closing
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
-from .data import DataContractError
+from .errors import DataContractError
 from .labels import MBTI_TYPES, mbti_to_bits, mbti_to_class_id
 
 SCHEMA_VERSION = 1

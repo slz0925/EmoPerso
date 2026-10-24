@@ -8,7 +8,7 @@ import tempfile
 
 from .augmentation import (AugmentedView,TextEdit,_validate_view,_digest,
                           source_signature,prepare_augmented_batches)
-from .data import DataContractError
+from .errors import DataContractError
 from .reasoning import ReasoningCandidate,source_binding,prepare_reasoning_batches
 from .token_inputs import batch_signature
 

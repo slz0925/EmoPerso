@@ -2,40 +2,13 @@
 
 [Overview](../README.md) · [Data](data.md) · [Training](training.md)
 
-Generation is an explicit preparation step outside the differentiable model.
-
-```mermaid
-flowchart TD
-    U[User text / stable identity / partition] --> T[Tokenizer and content masks]
-    T --> B[Frozen DeepSeek-V3]
-    B --> H[Trainable projection / attention pooling]
-    H --> P[Personality branch]
-    H --> E[Emotion branch]
-    P --> I[Personality query cross-attention]
-    H --> I
-    I --> M[Token residuals / emotion-conditioned pooling]
-    E --> M
-    U --> G[External frozen generator]
-    G --> A[Style / completion views]
-    A --> T
-    G --> R[Reasoning candidates]
-    R --> T
-    M --> S[Candidate fusion logits / IG and association / selection]
-    E --> S
-    H --> S
-    S --> F[Selected fusion or exact base fallback]
-    F --> C[Shared personality head: four logits]
-```
-
-Views and candidates retain their original user/partition, are separately re-encoded and use the same trainable Encoder. The diagram's shared Tokenizer/Encoder nodes represent separate encoding calls for each view.
-
 ## Frozen Backbone and shared representation
 
 `BackboneConfig`/`load_backbone` load a compatible bare native DeepSeek-V3 model. Official hidden size is 7168, while `EmoPersoEncoder` learns a projection to shared width `d` (default 4096). The width is read from actual configuration.
 
 `FrozenBackbone` permanently disables parameter gradients, stays in eval mode even when the enclosing model trains, and extracts `[B,T,H]` hidden states without autograd. It checks Tokenizer/model compatibility. Trainable projection produces `[B,T,d]`; attention pooling over content Tokens returns `[B,d]`. Padded and special Token positions contribute no pooled content. Empty-content rows are rejected upstream.
 
-`EmoPersoEncoder.from_pretrained(BackboneConfig(...), tokenizer=..., shared_hidden_size=..., shared_device=...)` combines these steps. Use local weights, an explicit dtype/device or device_map, and a separately selected shared device for dispatched weights. Do not call `.to()` on an entire dispatched model. No LM logits or all-layer hidden-state stack is required. Standard eager/SDPA options are explicit; flash-attention requires its own supported environment. Frozen MoE/MLA weights still require substantial memory.
+Configure dtype and device placement through `BackboneConfig`, and select a shared device for trainable layers when dispatching frozen weights. Do not call `.to()` on an entire dispatched model. Eager and SDPA attention are supported; flash-attention requires a compatible environment. Frozen MoE/MLA weights still require substantial memory.
 
 ## Personality and emotion tasks
 
@@ -53,7 +26,7 @@ Personality BCE averages all user/dimension entries; emotion BCE averages valid 
 
 ## Interaction
 
-`EmoPersoInteractionModel` wraps the MTL once. One personality query `[B,1,d]` attends to Token keys/values `[B,T,d]`, producing a global context `[B,1,d]`. The context is broadcast into per-Token residuals with LayerNorm. Dynamic emotion scores are:
+`EmoPersoInteractionModel` uses the personality and emotion embeddings from MTL. One personality query `[B,1,d]` attends to Token keys/values `[B,T,d]`, producing a global context `[B,1,d]`. The context is broadcast into per-Token residuals with LayerNorm. Dynamic emotion scores are:
 
 ```text
 score_i = v^T tanh(W_h h_i + W_e z_emotion + b)
@@ -67,9 +40,9 @@ Shared width must be at least 2 and divisible by num_heads (default 4). Attentio
 
 ## Text augmentation
 
-`HFCausalLMGenerator` is a separate frozen local CausalLM with its own compatible tokenizer. Configurable generation fields include model/tokenizer source, revision, dtype, device/device_map, temperature, top_p, prompt/new-token budgets and seed. Resource loading errors raise `GenerationLoadError`; over-budget prompts and failed or unfinished responses become rejected views. Custom backends implement `generate(prompt, *, seed=None) -> GenerationResult` and expose a JSON-serializable `identity`.
+`HFCausalLMGenerator` is a separate frozen CausalLM with its own tokenizer. Generation runs outside the differentiable model. Resource loading failures raise `GenerationLoadError`; over-budget prompts and failed or unfinished responses produce no accepted view. See [training configuration](training.md#views-and-preparation) for resource and caching settings, and [custom generation](python_api.md#custom-generation) for the backend interface.
 
-`TextAugmenter` edits certified visible whole-word segments while retaining real source boundaries. Defaults request formal, expressive and concise styles plus one contextual completion. Completion masks a short contiguous phrase within a segment, then inserts only the returned phrase at its original location. Default segment budget is 1200 characters, one segment per view; completion masks about 10% of words (at most 8), requires at least 5 words and limits the proposed phrase to 20 words. See `AugmentationConfig` for adjustable budgets.
+`TextAugmenter` edits certified visible whole-word segments while retaining real source boundaries. Defaults request formal, expressive and concise styles plus one contextual completion. Completion masks a short contiguous phrase within a segment, then inserts only the returned phrase at its original location. `AugmentationConfig` controls segment sizes, mask lengths and output budgets.
 
 | Mode | Python configuration | Experiment setting |
 |---|---|---|
@@ -89,9 +62,9 @@ Style CE applies only to successful style views. Prediction consistency is the m
 
 For candidate c of user u, shared fusion produces candidate personality logits. Information gain is the mean binary entropy of the base four-dimensional prediction minus that of the candidate-fused prediction. Positive values indicate reduced prediction uncertainty; negative values indicate increased uncertainty.
 
-`EmotionReasoningAssociation` compares projected, normalized emotion and candidate vectors by cosine. Candidate score is `ig_weight * IG/log(2) + association_weight * cosine`; default weights are 1. Softmax is within each user, with configurable positive temperature. Hard selection uses the highest score, with stable candidate-ID tie-breaking. No batch-level score normalization or ground-truth labels are used for inference.
+`EmotionReasoningAssociation` compares projected, normalized emotion and candidate vectors by cosine. Candidate score is `ig_weight * IG/log(2) + association_weight * cosine`; default weights are 1. Softmax is within each user, with configurable positive temperature. Hard selection uses the highest score, with stable candidate-ID tie-breaking. Scores depend only on that user's input and candidates, without ground-truth labels.
 
-Fusion is a lightweight bottleneck gated residual plus LayerNorm (default bottleneck min(d,256)), followed by the existing personality head. With no valid candidate a user's base refined vector and logits are reused exactly, rather than passing zeros through fusion. Candidate representations are `[K,d]`; final personality logits remain `[B,4]`.
+Fusion is a lightweight bottleneck gated residual plus LayerNorm (default bottleneck min(d,256)), followed by the existing personality head. With no valid candidate a user's base refined vector and logits are reused exactly. Candidate representations are `[K,d]`; final personality logits remain `[B,4]`.
 
 Argmax has no gradient. Final BCE trains selected paths; preference entropy and contrastive learning train scoring-related modules. Preference entropy is averaged over users with candidates (singletons contribute zero), and is inactive when all choices are singleton/empty or both score weights are zero. Candidate-to-user InfoNCE uses only emotion-valid users with candidates, balances candidates within each user and requires at least two eligible users. Multiple chains of the same user are not negatives of each other. The association objective learns candidate-to-user compatibility; the generator stays frozen throughout training.
 
@@ -106,4 +79,4 @@ L = lambda_mtl * (personality_weight * BCE_final + emotion_weight * BCE_emotion)
 
 Defaults: lambda_mtl=1, personality/emotion=.7/.3, and each other weight=.1. Final personality BCE is computed once. Cross consistency still uses the interaction vectors; augmentation KL uses auxiliary interaction predictions and does not generate reasoning chains per augmented view. Zero-weight or unsupported terms are disconnected, and an entirely inactive batch skips backward and optimizer/scheduler updates.
 
-`EmoPersoReasoningModel` owns one augmentation wrapper, which owns one interaction/MTL/Encoder chain. Accessors do not register duplicate models. Category/score extra state, parameter names and registration order are part of checkpoint compatibility. Frozen Backbone and generator are external to lightweight checkpoints. View/candidate microbatching limits forward group size but does not make retained backward activations constant-memory.
+Frozen Backbone and generator weights are supplied separately from [lightweight checkpoints](training.md#checkpoints-and-records). View/candidate microbatching limits forward group size; backward activations can span multiple groups.

@@ -6,7 +6,7 @@ from bisect import bisect_left, bisect_right
 from dataclasses import asdict, dataclass
 from importlib.metadata import PackageNotFoundError, version
 
-from .data import DataContractError
+from .errors import DataContractError
 from .text_data import find_explicit_type, text_sha
 from .token_inputs import TokenInput, TokenizerAdapter, _integer, _vector, user_text
 

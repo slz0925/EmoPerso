@@ -6,7 +6,7 @@ retention ratios. Memory grows linearly with the number of users.
 
 from collections import Counter
 import numpy as np
-from .data import DataContractError
+from .errors import DataContractError
 
 
 class TokenStatistics:

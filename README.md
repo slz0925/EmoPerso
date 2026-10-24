@@ -57,13 +57,20 @@ python -m emoperso.experiment predict --config configs/emoperso_predict.toml --c
 
 Evaluation reports Macro-F1 for each binary dimension and their arithmetic mean. Prediction exports user identifiers, probabilities and MBTI decisions as CSV and JSONL. Keep identity-bearing outputs and generated text caches private.
 
-[Training](docs/training.md) covers configuration, generation preparation, checkpoints and outputs. [Python API](docs/development.md) covers component construction and custom generators.
+[Training](docs/training.md) covers configuration, generation preparation, checkpoints and outputs. [Python API](docs/python_api.md) covers component construction and custom generators.
 
 ## Citation
 
-Lingzhi Shen, Xiaohao Cai, Yunfei Long, Imran Razzak, Guanming Chen and Shoaib Jameel. 2025. *EmoPerso: Enhancing Personality Detection with Self-Supervised Emotion-Aware Modelling*. Proceedings of the 34th ACM International Conference on Information and Knowledge Management (CIKM '25), 2577–2587. [DOI: 10.1145/3746252.3761247](https://doi.org/10.1145/3746252.3761247).
-
-Machine-readable citation information is in [CITATION.cff](CITATION.cff).
+```bibtex
+@inproceedings{shen2025emoperso,
+  title={EmoPerso: Enhancing personality detection with self-supervised emotion-aware modelling},
+  author={Shen, Lingzhi and Cai, Xiaohao and Long, Yunfei and Razzak, Imran and Chen, Guanming and Jameel, Shoaib},
+  booktitle={Proceedings of the 34th ACM International Conference on Information and Knowledge Management},
+  pages={2577--2587},
+  year={2025},
+  doi={10.1145/3746252.3761247}
+}
+```
 
 ## License
 

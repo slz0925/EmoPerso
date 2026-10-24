@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .comment_index import CommentIndex, normalize_comment_id, peak_memory_bytes
 from .conflict_resolution import RESOLUTION_POLICY, file_sha
-from .data import DataContractError
+from .errors import DataContractError
 from .raw_data import SourceSpan, check_source, load_users, read_span, write_json
 
 TEXT_POLICY = "user-text-v4"

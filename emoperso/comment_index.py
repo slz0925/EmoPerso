@@ -18,7 +18,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .data import DataContractError
+from .errors import DataContractError
 from .raw_data import (
     CsvSource, MAX_RECORD_BYTES, ReviewRequiredError, SourceSpan, check_source, check_sqlite_snapshot,
     fields_digest, load_users, pandora_user_key, prepare_users, read_span, write_json,

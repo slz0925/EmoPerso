@@ -8,7 +8,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from .backbone import _positive
-from .data import DataContractError
+from .errors import DataContractError
 from .emotion import DEFAULT_EMOTIONS
 from .mtl import EmoPersoMTL, MTLOutput, MultiTaskLoss
 

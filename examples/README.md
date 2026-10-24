@@ -8,4 +8,4 @@ python -m examples.user_batches --data /path/to/your/train.jsonl --tokenizer /pa
 
 The script validates the supplied files and prints batch shapes and counts. For post-level files add `--layout posts`; use `--order recent` when `created_utc` is available. For unlabelled input select `--partition inference`.
 
-Use the [experiment CLI](../docs/training.md) for training, evaluation and prediction, or the [Python API](../docs/development.md) for custom workflows.
+Use the [experiment CLI](../docs/training.md) for training, evaluation and prediction, or the [Python API](../docs/python_api.md) for custom workflows.

@@ -44,22 +44,7 @@ If multiple label representations are present they must agree. Invalid, incomple
 
 For `layout="posts"`, each record also has `post_id`. Users may appear in nonadjacent rows or different files. Post IDs must be unique within a dataset/user, and may be reused in other namespaces. Source record/byte spans track provenance independently of post identity. Specify `order="recent"` only with valid nonnegative decimal UTC seconds in `created_utc`; ordering is numeric descending with source-order ties. Otherwise `order="source"` follows input file and record order.
 
-```python
-from emoperso.datasets import load_dataset, iter_batches
-from emoperso.text_data import TextConfig
-from emoperso.deepseek_tokenizer import TokenizerConfig, load_tokenizer
-
-tokenizer = load_tokenizer(TokenizerConfig(
-    tokenizer_name_or_path="path/to/local/tokenizer",
-    local_files_only=True, max_length=2048))
-with load_dataset("/path/to/your/posts.jsonl", layout="posts",
-                  partition="train", preprocess=True,
-                  text_config=TextConfig()) as users:
-    for batch in iter_batches(users, tokenizer=tokenizer, batch_size=2):
-        pass  # Feed the public NumPy batch to the model.
-```
-
-Paths in this Python example are relative to the caller's working directory. Use absolute paths elsewhere. For unlabelled batches, select `partition="inference"` and set `require_supervised=False` in `iter_batches`.
+The [batch inspection example](../examples/README.md) loads these files and prints batch shapes and user counts. For unlabelled batches, select `partition="inference"` and set `require_supervised=False` in `iter_batches`.
 
 ## Text policy and bounded processing
 
@@ -93,15 +78,9 @@ The source-processing APIs build user-level inputs from Kaggle records and Pando
 - `comment_index` builds a disk-backed comment index, retaining source locations and duplicate versions. `conflict_audit` compares those versions; `conflict_resolution` produces a source-bound resolution overlay. Substantive body conflicts are isolated, while accepted duplicate IDs retain their first original version.
 - `UserTextSource` reads a ready, source-verified bundle and constructs user text with the configured selection and cleaning policy. Bundle status, source versions and resolution evidence are checked before normal reads.
 
-The general CSV/JSONL interface accepts caller-prepared user data directly. When preparing a cohort from raw records, preserve user identities, label eligibility, comment decisions and user-level partitions. Precomputed feature files require a separate, verified identity mapping to associate their rows with raw users.
+The general CSV/JSONL interface accepts caller-prepared user data directly. When preparing a cohort from raw records, preserve user identities, label eligibility, comment decisions and user-level partitions.
 
 SQLite readers require stable committed input. `prepare_sqlite_snapshot(source, new_destination)` creates an independent committed snapshot from an eligible source; the destination needs its own source binding before use in a verified bundle. Active writers and nonempty WAL must be resolved before snapshot preparation. Source bundles, temporary indexes and generated caches can contain private user data.
-
-## Precomputed feature inputs
-
-`emoperso.data.load_feature_splits(directory)` reads cumulative feature CSVs: `train.csv` contains train rows, `test.csv` contains train followed by test, and `eval.csv` contains train, test and validation. Matching label files define the logical boundaries. The loader checks feature dimensions, label counts and prefix consistency, then returns `FeatureSplits` with separate `train`, `validation` and `test` arrays and labels.
-
-Use this interface for existing aggregated feature experiments. These vectors do not contain the Token states required by the text model; Token representations must be encoded from source text.
 
 ## Token statistics
 
