@@ -6,7 +6,11 @@ and expose a JSON-serializable ``identity`` describing their model/settings.
 from dataclasses import asdict, dataclass, field
 import math
 from numbers import Integral, Real
+from pathlib import Path
 import threading
+
+from .deepseek_tokenizer import fingerprint, _resolve_tokenizer_revision
+from .model_resources import local_model_fingerprint, check_weight_scales
 
 _RNG_LOCK = threading.RLock()
 
@@ -135,7 +139,8 @@ class GenerationResult:
 class HFCausalLMGenerator:
     """Lazy AutoModelForCausalLM + its own tokenizer; sequential bounded requests.
 
-    Loads local safetensors by default with remote code disabled. Resource
+    Cache identity resolves metadata and tokenizer files without loading weights.
+    Loads safetensors without executing repository code. Resource
     loading failures raise GenerationLoadError; execution failures raise
     GenerationExecutionError. Over-budget prompts and
     unfinished responses return unsuccessful GenerationResult values.
@@ -145,17 +150,63 @@ class HFCausalLMGenerator:
             raise TypeError("Expected GenerationConfig")
         self.config = config
         self.model = self.tokenizer = None
+        self._model_config = self._resource_identity = None
 
     @property
     def identity(self):
-        return {"backend": "hf-causal-lm-v1", **asdict(self.config)}
+        self._resolve_resources()
+        return {"backend": "hf-causal-lm-v2", **asdict(self.config), **self._resource_identity}
 
     @classmethod
     def from_components(cls, model, tokenizer, config):
         """Explicit injection of an executable compatible CausalLM/tokenizer."""
         obj = cls(config)
         obj._attach(model, tokenizer)
+        obj._model_config = model.config
+        obj._resource_identity = obj._describe_resources(model.config, tokenizer)
         return obj
+
+    def _describe_resources(self, model_config, tokenizer):
+        backend = getattr(tokenizer, "backend_tokenizer", None)
+        return {"model_revision": getattr(model_config, "_commit_hash", None),
+            "tokenizer_revision": tokenizer.init_kwargs.get("_commit_hash"),
+            "tokenizer_fingerprint": fingerprint({
+                "class": type(tokenizer).__name__,
+                "encoding": backend.to_str() if backend is not None else tokenizer.get_vocab(),
+                "special_tokens": tokenizer.special_tokens_map,
+                "chat_template": getattr(tokenizer, "chat_template", None),
+                "padding_side": tokenizer.padding_side,
+                "truncation_side": tokenizer.truncation_side,
+                "model_max_length": tokenizer.model_max_length,
+                "clean_up_tokenization_spaces": tokenizer.clean_up_tokenization_spaces})}
+
+    def _resolve_resources(self):
+        """Resolve metadata and tokenizer before binding caches; defer weights."""
+        if self._resource_identity is not None:
+            return
+        try:
+            from transformers import AutoConfig, AutoTokenizer
+            c = self.config
+            options = dict(revision=c.revision, local_files_only=c.local_files_only, trust_remote_code=False)
+            model_config = AutoConfig.from_pretrained(c.model_name_or_path, **options)
+            resolved = None if Path(c.model_name_or_path).is_dir() else getattr(model_config, "_commit_hash", None)
+            if not Path(c.model_name_or_path).is_dir() and not resolved:
+                raise ValueError("Hub model revision could not be resolved")
+            source = c.tokenizer_name_or_path or c.model_name_or_path
+            tokenizer_revision = (resolved if source == c.model_name_or_path else
+                _resolve_tokenizer_revision(source, c.revision, c.local_files_only))
+            if tokenizer_revision:
+                options["revision"] = tokenizer_revision
+            tokenizer = AutoTokenizer.from_pretrained(source, **options)
+            identity = self._describe_resources(model_config, tokenizer)
+            identity["model_revision"] = resolved
+            identity["tokenizer_revision"] = tokenizer_revision or identity["tokenizer_revision"]
+            if Path(c.model_name_or_path).is_dir():
+                identity["local_model_fingerprint"] = local_model_fingerprint(c.model_name_or_path, include_generation=True)
+            self._model_config, self.tokenizer = model_config, tokenizer
+            self._resource_identity = identity
+        except (OSError, RuntimeError, ValueError, TypeError, ImportError, AttributeError):
+            raise GenerationLoadError("Cannot resolve generation model/tokenizer resources") from None
 
     def _attach(self, model, tokenizer):
         import torch
@@ -189,18 +240,24 @@ class HFCausalLMGenerator:
 
     def _load_resources(self):
         import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers import AutoModelForCausalLM
         c = self.config
-        options = dict(revision=c.revision, local_files_only=c.local_files_only, trust_remote_code=False)
-        tokenizer = AutoTokenizer.from_pretrained(c.tokenizer_name_or_path or c.model_name_or_path, **options)
+        self._resolve_resources()
+        local_identity = self._resource_identity.get('local_model_fingerprint')
+        if local_identity is not None and local_model_fingerprint(c.model_name_or_path, include_generation=True) != local_identity:
+            raise ValueError('Local generation model files changed after resource resolution')
+        options = dict(config=self._model_config,
+            revision=self._resource_identity["model_revision"] or c.revision,
+            local_files_only=c.local_files_only, trust_remote_code=False)
         model, info = AutoModelForCausalLM.from_pretrained(c.model_name_or_path, **options,
             torch_dtype="auto" if c.dtype == "auto" else getattr(torch, c.dtype),
             device_map=c.device_map, use_safetensors=True, output_loading_info=True,
             ignore_mismatched_sizes=False)
         _check_causal_loading_info(info, model)
+        check_weight_scales(model, c.model_name_or_path, options['revision'])
         if c.device is not None:
             model.to(c.device)
-        self._attach(model, tokenizer)
+        self._attach(model, self.tokenizer)
         return self
 
     def generate(self, prompt, *, seed=None):

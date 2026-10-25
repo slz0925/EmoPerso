@@ -4,13 +4,15 @@
 
 ## Resources and command settings
 
-The templates select the official post-trained `deepseek-ai/DeepSeek-V3` at revision `e815299b0bcbac849fa540c768ef21845365c9eb` for the Backbone, generator and tokenizer. With `local_files_only=true`, Hugging Face loads an already cached snapshot or local files and fails if required files are missing. It does not download weights. Prepare resources separately, set the data paths under `../local/` and choose devices with sufficient memory.
+The templates select the official post-trained `deepseek-ai/DeepSeek-V3` for the Backbone, generator and tokenizer. Models run locally using resources from local directories or the Hugging Face Hub. Configure your data paths, resource sources and devices for the intended deployment.
+
+`local_files_only=true` restricts each loader to cached or local files and fails if required files are missing. Set it to `false` in the relevant `[tokenizer]`, `[model.backbone]` or `[views.generator]` section to allow Hub downloads. This controls resource retrieval, not where the model runs.
 
 Backbone and generator use separate hidden-state and CausalLM interfaces. The generator uses the tokenizer from its model source unless `views.generator.tokenizer_name_or_path` is specified. Templates use GPU placement and BF16; CPU execution uses FP32. With Transformers 4.51.3, native FP8 execution requires Triton and CUDA GPUs with compute capability 8.9 or newer; setting BF16 does not convert FP8 weights.
 
-TOML and JSON are supported. Unprefixed model names and `namespace/name` pairs are Hub IDs, including in offline mode. Prefix local relative model directories with `./` or `../`; absolute paths, Windows paths and direct cache snapshot directories are also accepted. Local paths resolve relative to the configuration file regardless of `local_files_only`. Data, output, cache and offload paths are always local. CLI path overrides resolve relative to the current directory.
+TOML and JSON are supported. Unprefixed model names and `namespace/name` pairs are Hub IDs. Prefix local relative model directories with `./` or `../`; absolute paths, Windows paths and cache snapshot directories are also accepted. Local paths resolve relative to the configuration file regardless of `local_files_only`. Data, output, cache and offload paths are filesystem paths; the `../local/` entries are examples. CLI path overrides resolve relative to the current directory. The `--tokenizer` override selects a local directory; configure Hub tokenizer sources in `[tokenizer]`.
 
-For local resources, replace the three model/tokenizer sources with versioned directories and omit `revision`: Transformers does not use it to verify local files. A directory named after a commit is still a local directory, not proof of its contents. Record a meaningful `model.backbone_id` for the supplied weights and verify their origin when preparing them. Converted weights need their own identity. Checkpoints compare the source, effective Hub revision and declared Backbone ID; tokenizer encoding fingerprints describe the loaded tokenizer. Generation caches include configured sources, revisions and sampling settings. Use a new versioned directory or fresh cache when replacing local resources in place.
+For local resources, set the model/tokenizer sources to their directories. Omit `revision` to use the source's default version, or specify a Hub branch, tag or commit in the resource section. Checkpoints compare model and tokenizer identities; generation caches also track resolved model versions, tokenizer content and generation settings. Local weight files must remain accessible when using prepared caches.
 
 | Template | Data sources | Runtime settings |
 |---|---|---|
@@ -59,7 +61,7 @@ python -m emoperso.experiment prepare --config configs/emoperso_train.toml --par
 
 Prepare other partitions separately. Training uses augmentation and reasoning; validation, test and inference use reasoning only. Prompts use visible source text, excluding target labels. Cache entries bind user identity, partition, source, configuration and tokenizer, and may contain private text. Embeddings are recomputed through the current trainable layers. `candidate_microbatch` controls candidate encoding group size; backward activations can span multiple groups.
 
-Loading and execution failures stop the command without caching the failed user record. Individual responses that fail length or quality checks are skipped and may produce a valid empty cached result. Only `emoperso-generated-inputs-v2` records are reused; run `prepare` with the current configuration before using `prepared`. Model/tokenizer paths and generation settings also participate in cache identity. Use versioned resource paths or a fresh cache when replacing resource files in place.
+Loading and execution failures stop the command without caching the failed user record. Individual responses that fail length or quality checks are skipped and may produce a valid empty cached result. Only `emoperso-generated-inputs-v2` records are reused; run `prepare` with the current configuration before using `prepared`. Model/tokenizer paths, resource versions and generation settings also participate in cache identity.
 
 Augmentation and reasoning share one lazy generator; the Backbone is a separate model instance. To avoid loading both sets of weights in the training process, run `prepare` for the required partitions in a separate process, then train with `policy="prepared"`. Cached text is re-encoded through the current trainable model.
 

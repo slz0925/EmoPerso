@@ -27,9 +27,9 @@ python -m pip install -r requirements.txt
 python -m pip install .
 ```
 
-The package supports Python 3.11 or newer. For a minimal installation, use `pip install .` for data and metrics, or `pip install ".[tokenizer]"` for tokenization alone. Use `pip install ".[backbone]"` to install model dependencies within the supported version ranges.
+The package supports Python 3.11 or newer. For a minimal installation, use `pip install .` for data and metrics, or `pip install ".[tokenizer]"` for tokenisation alone. Use `pip install ".[backbone]"` to install model dependencies within the supported version ranges.
 
-The configurations select [DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3/tree/e815299b0bcbac849fa540c768ef21845365c9eb) at revision `e815299b0bcbac849fa540c768ef21845365c9eb` for the frozen Backbone, generation and tokenization. Prepare this snapshot in the Hugging Face cache or configure local directories; loading is offline by default. Full DeepSeek-V3 needs substantial memory and compatible hardware; see [resource configuration](docs/training.md#resources-and-command-settings).
+The configurations select [DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3) for the frozen Backbone, generation and tokenisation. The model runs locally; weights and tokenizer files can be loaded from local directories or the Hugging Face Hub. Configure resource sources and use `local_files_only` to control download access; see [resource configuration](docs/training.md#resources-and-command-settings) for loading options and hardware requirements.
 
 ## Configuration and data
 

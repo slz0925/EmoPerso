@@ -56,7 +56,7 @@ Shuffle is explicit and seeded for training; validation/test shuffling is reject
 
 ## Tokenizer and Batch
 
-`DeepSeekTokenizerAdapter` accepts trusted compatible DeepSeek-V3 fast BPE resources. `TokenizerConfig` defaults to `deepseek-ai/DeepSeek-V3`, revision `None`, max_length 2048, right padding and `local_files_only=False`; all supplied experiment templates explicitly use local resources. Set `local_files_only=True` for offline loading and select a revision to identify the tokenizer version. Remote executable model code is disabled.
+`DeepSeekTokenizerAdapter` accepts compatible DeepSeek-V3 fast BPE resources from a Hub repository or local directory. `TokenizerConfig` defaults to `deepseek-ai/DeepSeek-V3`, revision `None`, max_length 2048, right padding and `local_files_only=False`. The experiment templates use the source's default revision and set `local_files_only=true` to read cached or local files. Set it to `false` to allow Hub downloads. Repository Python code is not executed.
 
 Input is plain user text with one automatic BOS, no automatic EOS, chat template or personality prompt. The length budget includes specials and is in `[1,2048]`. Truncation retains a prefix and retreats when needed to avoid partial Unicode decoding or exposing a new explicit MBTI type inside a source post. Existing explicit types must be cleaned first or the adapter rejects them. Padding may be left or right; special/control Tokens are not pooled as content. Vocabulary, special IDs, offsets and model compatibility are validated; the supplied vocabulary and padding configuration are preserved.
 

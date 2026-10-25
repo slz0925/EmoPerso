@@ -48,7 +48,7 @@ class TokenizerConfig:
 
 
 def load_tokenizer(config=None):
-    """Public loader. Only tokenizer files are loaded; remote code is forbidden."""
+    """Load tokenizer files without executing repository Python code."""
     return DeepSeekTokenizerAdapter(config=TokenizerConfig() if config is None else config)
 
 
@@ -66,6 +66,14 @@ def _signature(tokenizer):
             "all_special_ids": list(tokenizer.all_special_ids),
             "model_max_length": tokenizer.model_max_length,
             "padding_side": tokenizer.padding_side, "truncation_side": tokenizer.truncation_side}
+
+
+def _resolve_tokenizer_revision(source, revision, local_files_only):
+    if Path(source).is_dir():
+        return None
+    from transformers.models.auto.tokenization_auto import get_tokenizer_config
+    return get_tokenizer_config(source, revision=revision,
+        local_files_only=local_files_only).get("_commit_hash")
 
 
 class DeepSeekTokenizerAdapter(TokenizerAdapter):
@@ -91,7 +99,8 @@ class DeepSeekTokenizerAdapter(TokenizerAdapter):
     def _init_public(self, config):
         from transformers import AutoTokenizer
         source = config.tokenizer_name_or_path or config.model_name_or_path
-        backend = AutoTokenizer.from_pretrained(source, revision=config.revision,
+        resolved = _resolve_tokenizer_revision(source, config.revision, config.local_files_only)
+        backend = AutoTokenizer.from_pretrained(source, revision=resolved or config.revision,
             use_fast=True, local_files_only=config.local_files_only, trust_remote_code=False)
         if (not backend.is_fast
                 or json.loads(backend.backend_tokenizer.to_str())["model"]["type"] != "BPE"):
@@ -108,7 +117,7 @@ class DeepSeekTokenizerAdapter(TokenizerAdapter):
         if _integer(backend.model_max_length) and backend.model_max_length < config.max_length:
             raise DataContractError("Configured budget exceeds tokenizer model_max_length")
         local = Path(source).is_dir()
-        resolved = None if local else backend.init_kwargs.get("_commit_hash")
+        resolved = None if local else resolved or backend.init_kwargs.get("_commit_hash")
         revision = "unversioned-local" if local else resolved or config.revision or "unversioned-hub"
         super().__init__(backend, tokenizer_id=source, revision=revision,
                          max_length=config.max_length, padding_side=config.padding_side)

@@ -1,4 +1,4 @@
-"""Inspect token batch shapes from your CSV/JSONL files and local tokenizer."""
+"""Inspect token batch shapes from CSV/JSONL files with a DeepSeek-V3 tokenizer."""
 
 import argparse
 import json
@@ -10,7 +10,9 @@ from emoperso.deepseek_tokenizer import TokenizerConfig, load_tokenizer
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data',nargs='+',required=True,help='All cohort CSV/JSONL files to validate together')
-    parser.add_argument('--tokenizer',required=True,help='Local DeepSeek-V3 tokenizer directory (no model weights)')
+    parser.add_argument('--tokenizer',required=True,help='DeepSeek-V3 tokenizer directory or Hub repository ID')
+    parser.add_argument('--revision',help='Optional Hub branch, tag or commit')
+    parser.add_argument('--local-files-only',action='store_true',help='Use cached or local tokenizer files without downloading')
     parser.add_argument('--partition',choices=('train','validation','test','inference'),required=True)
     parser.add_argument('--layout',choices=('users','posts'),default='users')
     parser.add_argument('--order',choices=('source','recent'),default='source')
@@ -20,7 +22,8 @@ def main():
     parser.add_argument('--seed',type=int,default=42)
     parser.add_argument('--temp-dir',default=None,help='Writable private scratch directory')
     args=parser.parse_args()
-    tokenizer=load_tokenizer(TokenizerConfig(tokenizer_name_or_path=args.tokenizer,revision=None,local_files_only=True))
+    tokenizer=load_tokenizer(TokenizerConfig(tokenizer_name_or_path=args.tokenizer,
+        revision=args.revision,local_files_only=args.local_files_only))
     count=0
     with load_dataset(args.data,partition=args.partition,layout=args.layout,order=args.order,
                       preprocess=args.preprocess,temp_dir=args.temp_dir) as dataset:
