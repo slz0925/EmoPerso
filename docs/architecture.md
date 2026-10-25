@@ -18,7 +18,7 @@ Configure dtype and device placement through `BackboneConfig`, and select a shar
 joy anger sadness fear disgust surprise contempt
 ```
 
-`prepare_targets(batch)` uses only certified visible source text. `EmotionLabeler` implements reproducible English cues, local negation, emphasis and experiential-context rules. Multiple emotions may be positive. Rows without emotion cues have `emotion_valid=False` and are excluded from emotion supervision. Negation does not manufacture an opposite emotion; punctuation alone does not determine a class. Matching does not cross real posts, special-Token gaps or truncated partial words. Sarcasm, language coverage and semantic ambiguity remain limitations.
+`prepare_targets(batch)` uses only certified visible source text. `EmotionLabeler` uses English language cues, local negation, emphasis and experiential-context rules. Multiple emotions may be positive. Rows without emotion cues have `emotion_valid=False` and are excluded from emotion supervision. Negation does not manufacture an opposite emotion; punctuation alone does not determine a class. Matching does not cross real posts, special-Token gaps or truncated partial words. Sarcasm, language coverage and semantic ambiguity remain limitations.
 
 Custom ordered categories must agree in model, labeler, targets and loss. Caller-supplied cues replace that category's phrases; unspecified built-in categories retain their rules. Supply external emotion targets explicitly in matching user and category order.
 

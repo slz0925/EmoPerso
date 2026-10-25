@@ -1,4 +1,4 @@
-"""Configured train/evaluate/predict/prepare commands; local resources by default."""
+"""Configured training, evaluation, prediction and view preparation commands."""
 import argparse
 from contextlib import ExitStack
 from dataclasses import asdict,dataclass,field,replace
@@ -51,7 +51,7 @@ def read_config(path):
     """Read JSON/TOML; explicit local paths are relative to the configuration.
 
     Unprefixed model names and namespace/name pairs are Hub IDs. Use ./ or ../
-    for local relative directories. local_files_only controls network access.
+    for local relative directories. local_files_only controls Hub downloads.
     """
     path=Path(path).resolve()
     with path.open('rb') as stream:
@@ -113,6 +113,7 @@ def build_components(config,*,prepare_only=False,training_augmentation=True,
     from .reasoning import ReasoningConfig,ReasoningGenerator
     from .reasoning_model import EmoPersoReasoningModel,ReasoningLoss
     from .training import TrainingConfig,seed_everything
+    from .model_resources import local_model_fingerprint
 
     training=TrainingConfig(**config.training);seed_everything(training.seed)
     if tokenizer is None:
@@ -138,12 +139,15 @@ def build_components(config,*,prepare_only=False,training_augmentation=True,
         if not m.get('backbone',{}).get('model_name_or_path'):
             raise ValueError('Configure model.backbone.model_name_or_path or inject a FrozenBackbone')
         b=BackboneConfig(**m['backbone'])
+        local_fingerprint=local_model_fingerprint(b.model_name_or_path)
         encoder=EmoPersoEncoder.from_pretrained(b,tokenizer=tokenizer,shared_hidden_size=m.get('shared_hidden_size',4096),shared_device=m.get('shared_device'))
         local=Path(b.model_name_or_path).is_dir()
         backbone_identity={'kind':'local' if local else 'hub',
             'source':str(Path(b.model_name_or_path).resolve()) if local else b.model_name_or_path,
             'revision':None if local else getattr(encoder.backbone.model.config,'_commit_hash',None) or b.revision,
             'id':m.get('backbone_id')}
+        if local:
+            backbone_identity['local_model_fingerprint']=local_fingerprint
     else:
         if not isinstance(backbone,FrozenBackbone):raise TypeError('backbone must be a FrozenBackbone')
         if backbone.tokenizer.encoding_fingerprint!=tokenizer.encoding_fingerprint:
@@ -245,7 +249,8 @@ def run_experiment(command,config,*,checkpoint=None,resume=None,partition=None,u
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command',choices=('train','evaluate','predict','prepare'))
-    parser.add_argument('--config',required=True);parser.add_argument('--tokenizer')
+    parser.add_argument('--config',required=True)
+    parser.add_argument('--tokenizer',help='Override the tokenizer with a local directory')
     parser.add_argument('--data');parser.add_argument('--partition',choices=('train','validation','test','inference'))
     parser.add_argument('--output');parser.add_argument('--checkpoint');parser.add_argument('--resume')
     parser.add_argument('--batch-size',type=int);parser.add_argument('--max-epochs',type=int);parser.add_argument('--seed',type=int)

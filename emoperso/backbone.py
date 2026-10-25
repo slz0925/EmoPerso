@@ -16,6 +16,7 @@ except ImportError as exc:
 from .errors import DataContractError
 from .deepseek_tokenizer import REPO_ID, DeepSeekTokenizerAdapter
 from .token_inputs import validate_identifier
+from .model_resources import check_weight_scales
 
 
 class BackboneLoadError(RuntimeError):
@@ -30,7 +31,7 @@ def _positive(value, name):
 
 @dataclass(frozen=True)
 class BackboneConfig:
-    """Load native DeepSeek-V3 weights, using local resources by default.
+    """Load native DeepSeek-V3 weights from a Hub repository or local directory.
 
     The backend uses the Transformers implementation and rejects remote code,
     including repository code referenced by auto_map.
@@ -142,6 +143,7 @@ def load_backbone(config=None, *, tokenizer):
                 options[key] = getattr(config, key)
         model, info = DeepseekV3Model.from_pretrained(config.model_name_or_path, **options)
         _check_loading_info(info, model)
+        check_weight_scales(model, config.model_name_or_path, options['revision'])
         if config.device is not None:
             model.to(config.device)
         result = FrozenBackbone(model, tokenizer=tokenizer)
@@ -151,7 +153,7 @@ def load_backbone(config=None, *, tokenizer):
     except (BackboneLoadError, DataContractError):
         raise
     except (ImportError, OSError, ValueError, TypeError, RuntimeError) as exc:
-        raise BackboneLoadError("Cannot load native DeepSeek-V3 weights: check local files/revision, optional dependencies, dtype/quantization and device resources") from exc
+        raise BackboneLoadError("Cannot load native DeepSeek-V3 weights: check model resources/revision, optional dependencies, dtype/quantization and device resources") from exc
 
 
 def _hook_device(hook):

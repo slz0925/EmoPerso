@@ -11,7 +11,7 @@ config = read_config("configs/emoperso_train.toml")
 tokenizer, model, criterion, preparer, training, identity = build_components(config)
 ```
 
-`build_components` loads the configured frozen Backbone and creates the trainable model, joint loss and view preparer. Generation resources are loaded lazily when preparing views. `build_components(config, prepare_only=True)` returns just the tokenizer and preparer. `run_experiment("train", config)` runs the configured training workflow; `evaluate` and `predict` also require `checkpoint=...`.
+`build_components` loads the configured frozen Backbone and creates the trainable model, joint loss and view preparer. Generator configuration and tokenizer files resolve during construction; generation weights load when needed. `build_components(config, prepare_only=True)` returns just the tokenizer and preparer. `run_experiment("train", config)` runs the configured training workflow; `evaluate` and `predict` also require `checkpoint=...`.
 
 To reuse already loaded resources, supply `tokenizer=...`, `backbone=...` and optionally `generator=...`. The Backbone must be a `FrozenBackbone` bound to the same tokenizer encoding. Supply a nonempty JSON-serializable `backbone_identity` describing its stable weight version; checkpoints compare this identity.
 
@@ -56,6 +56,7 @@ Return unsuccessful results for content rejections, and raise for model/tokenize
 | raw_data, comment_index, conflict_audit, conflict_resolution | Source identities, comment indexing and conflict isolation |
 | text_data, datasets | User text views, cleaning and CSV/JSONL loading |
 | token_inputs, deepseek_tokenizer, token_statistics | Batch contracts, encoding and coverage summaries |
+| model_resources | Safetensors model identity and FP8 scale validation |
 | backbone, emotion, mtl, interaction | Shared features, cue supervision and task interaction |
 | generation, augmentation, augmentation_model | Generation, paired views and auxiliary objectives |
 | reasoning, reasoning_selection, reasoning_model | Candidates, scores, selection and fusion |
