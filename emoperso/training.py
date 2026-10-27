@@ -75,9 +75,15 @@ def precision_context(model, precision):
     if device.type not in ('cpu','cuda'):raise ValueError('Training currently supports CPU/CUDA')
     if precision!='fp32' and device.type!='cuda':raise ValueError('Mixed precision requires CUDA; CPU execution uses FP32')
     if device.type=='cuda' and not torch.cuda.is_available():raise ValueError('CUDA device is not available')
-    if precision=='bf16' and not torch.cuda.is_bf16_supported():raise ValueError('CUDA BF16 is not supported')
-    return (lambda: nullcontext()) if precision=='fp32' else (
-        lambda:torch.autocast('cuda',dtype=torch.bfloat16 if precision=='bf16' else torch.float16))
+    if precision=='bf16':
+        with torch.cuda.device(device):
+            if not torch.cuda.is_bf16_supported():raise ValueError('CUDA BF16 is not supported')
+    if precision=='fp32':return lambda: nullcontext()
+    def autocast():
+        # CUDA autocast also checks BF16 capability during construction.
+        with torch.cuda.device(device):
+            return torch.autocast('cuda',dtype=torch.bfloat16 if precision=='bf16' else torch.float16)
+    return autocast
 
 
 class Trainer:

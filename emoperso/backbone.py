@@ -67,6 +67,21 @@ class BackboneConfig:
             raise ValueError("device_map must be a string or mapping")
         if self.max_memory is not None and not isinstance(self.max_memory, dict):
             raise ValueError("max_memory must be a mapping")
+        if self.max_memory is not None:
+            memory = {}
+            for key, budget in self.max_memory.items():
+                if isinstance(key, Integral) and not isinstance(key, bool) and key >= 0:
+                    device = int(key)
+                elif isinstance(key, str) and key.isascii() and key.isdecimal():
+                    device = int(key)
+                elif isinstance(key, str) and key in ("cpu", "disk", "mps"):
+                    device = key
+                else:
+                    raise ValueError(f"Invalid max_memory device key {key!r}; expected a nonnegative integer GPU ID, ASCII digit string, or cpu/disk/mps")
+                if device in memory:
+                    raise ValueError(f"Duplicate max_memory device after normalization: {device!r}")
+                memory[device] = budget
+            object.__setattr__(self, "max_memory", memory)
         if self.device_map is None and (self.max_memory is not None or self.offload_folder is not None):
             raise ValueError("max_memory/offload_folder require device_map")
         if self.attn_implementation not in ("eager", "sdpa", "flash_attention_2"):
