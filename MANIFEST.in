@@ -1,5 +1,5 @@
 include README.md LICENSE CODE_PROVENANCE.md pyproject.toml MANIFEST.in requirements.txt
-include CITATION.cff .gitignore examples/README.md
+include .gitignore examples/README.md
 include docs/*.md configs/*.toml
 include docs/images/emoperso_architecture.png
 recursive-include emoperso *.py
